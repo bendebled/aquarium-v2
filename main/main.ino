@@ -1,19 +1,47 @@
+#include "WiFiEsp.h"
+
+//Debug
 #define debugSerial SerialUSB
+
+//Wifi
+#define espSerial Serial1
+char ssid[] = "SSID";
+char pass[] = "PASSWD";
+int status = WL_IDLE_STATUS;
+WiFiEspServer server(80);
+WifiEspRingBuffer buf(8);
+
+//LED
 #define NUMBER_OF_LED 8
 
 void setup() {
+  //Debug
   debugSerial.begin(9600);
   while (!debugSerial);
-  
   debugSerial.println("---");
   
+  //Wifi
+  espSerial.begin(115200);
+  WiFi.init(&espSerial);
+  if (WiFi.status() == WL_NO_SHIELD) 
+    debugSerial.println("WiFi shield not present");
+  while ( status != WL_CONNECTED) {
+    debugSerial.print("Attempting to connect to WPA SSID: ");
+    debugSerial.println(ssid);
+    status = WiFi.begin(ssid, pass);
+  }
+  debugSerial.println("You're connected to the network");
+  printWifiStatus();
+  server.begin();
+
+  //LED
   initPWM();
   debugSerial.println("PWM Initialized");
 }
 
 
 void loop() {
-  
+  webServer();
 }
 
 /*
@@ -154,3 +182,70 @@ void setPWM(byte led, int value){
   }
 }
 
+void printWifiStatus() {
+  // print the SSID of the network you're attached to
+  debugSerial.print("SSID: ");
+  debugSerial.println(WiFi.SSID());
+
+  // print your WiFi shield's IP address
+  IPAddress ip = WiFi.localIP();
+  debugSerial.print("IP Address: ");
+  debugSerial.println(ip);
+  
+  // print where to go in the browser
+  debugSerial.println();
+  debugSerial.print("To see this page in action, open a browser to http://");
+  debugSerial.println(ip);
+  debugSerial.println();
+}
+
+void webServer(){
+WiFiEspClient client = server.available();  // listen for incoming clients
+
+  if (client) {                               // if you get a client,
+    debugSerial.println("New client");             // print a message out the serial port
+    buf.init();                               // initialize the circular buffer
+    while (client.connected()) {              // loop while the client's connected
+      if (client.available()) {               // if there's bytes to read from the client,
+        char c = client.read();               // read a byte, then
+        buf.push(c);                          // push it to the ring buffer
+        
+        // you got two newline characters in a row
+        // that's the end of the HTTP request, so send a response
+        if (buf.endsWith("\r\n\r\n")) {
+          sendHttpResponse(client);
+          break;
+        }
+
+        // Check to see if the client request was "GET /H" or "GET /L":
+        if (buf.endsWith("GET /H")) {
+          debugSerial.println("Turn led ON");
+        }
+        else if (buf.endsWith("GET /L")) {
+          debugSerial.println("Turn led OFF");
+        }
+      }
+    }
+    
+    // close the connection
+    client.stop();
+    debugSerial.println("Client disconnected");
+  }
+}
+
+void sendHttpResponse(WiFiEspClient client)
+{
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/html");
+  client.println();
+
+  client.println("<html><head><title>Aquarium</title></head><body>");
+  client.println("<span style=\"font-weight:bold;\">Time: </span><br /><br />");
+  client.println("<span style=\"white-space: pre-wrap; font-weight:bold;\">LED:\t1\t2\t3\t4\t5\t6\t7\t8</span><br />");
+  client.println("<span style=\"white-space: pre-wrap;\">\t\t100\t50\t30\t0\t0\t0\t0\t0</span><br /><br />");
+  client.println("<span style=\"font-weight:bold;\">Mode: </span><a href=\"/H\">Manual</a> - <a href=\"/H\">Automatic</a> - <a href=\"/H\">Off</a><br /><br />");
+  client.println("</body></html>");
+  
+  // The HTTP response ends with another blank line:
+  client.println();
+}
