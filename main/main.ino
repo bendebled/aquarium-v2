@@ -2,6 +2,7 @@
 #include <TimeLib.h>
 #include "WiFiEsp.h"
 #include "WiFiEspUdp.h"
+#include <Timezone.h>    //https://github.com/JChristensen/Timezone
 
 //Debug
 #define debugSerial SerialUSB
@@ -20,8 +21,14 @@ int status = WL_IDLE_STATUS;
   const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
   byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
   WiFiEspUDP Udp;
-  unsigned int lastNtpTry = 0;
-  #define NTP_TRIES 3
+
+//NTP
+unsigned int lastNtpTry = 0;
+#define NTP_TRIES 3
+TimeChangeRule tcrCET = {"CET", First, Sun, Nov, 2, 60};   //UTC+1
+TimeChangeRule tcrCEST = {"CEST", First, Sun, Nov, 2, 60};   //UTC+2
+Timezone myTZ(tcrCET, tcrCEST);
+TimeChangeRule *tcr; 
 
 //LED
 #define NUMBER_OF_LED 8
@@ -318,7 +325,8 @@ bool getNtpTime(){
     // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
     const unsigned long seventyYears = 2208988800UL;
     unsigned long epoch = secsSince1900 - seventyYears;
-    setTime(epoch);
+    //setTime(epoch);
+    setTime(myTZ.toLocal(epoch, &tcr));
     debugSerial.print("Unix time = ");
     debugSerial.println(epoch);
     debugSerial.print(hour());
