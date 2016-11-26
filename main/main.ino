@@ -1,4 +1,7 @@
+#include <Time.h>
+#include <TimeLib.h>
 #include "WiFiEsp.h"
+#include "WiFiEspUdp.h"
 
 //Debug
 #define debugSerial SerialUSB
@@ -8,8 +11,16 @@
 char ssid[] = "SSID";
 char pass[] = "PASSWD";
 int status = WL_IDLE_STATUS;
-WiFiEspServer server(80);
-WifiEspRingBuffer buf(8);
+  //Server
+  WiFiEspServer server(80);
+  WifiEspRingBuffer buf(8);
+  //NTP
+  unsigned int localPort = 2390;      // local port to listen for UDP packets
+  IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server 
+  const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
+  byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
+  WiFiEspUDP Udp;
+
 
 //LED
 #define NUMBER_OF_LED 8
@@ -32,11 +43,17 @@ void setup() {
   }
   debugSerial.println("You're connected to the network");
   printWifiStatus();
-  server.begin();
+    //Server
+    server.begin();
+    //NTP
+    Udp.begin(localPort);
 
   //LED
   initPWM();
   debugSerial.println("PWM Initialized");
+
+  //Time
+  getNtpTime();
 }
 
 
@@ -240,7 +257,7 @@ void sendHttpResponse(WiFiEspClient client)
   client.println();
 
   client.println("<html><head><title>Aquarium</title></head><body>");
-  client.println("<span style=\"font-weight:bold;\">Time: </span><br /><br />");
+  client.println("<span style=\"font-weight:bold;\">Time: </span>"+String(hour())+":"+String(minute())+"<br /><br />");
   client.println("<span style=\"white-space: pre-wrap; font-weight:bold;\">LED:\t1\t2\t3\t4\t5\t6\t7\t8</span><br />");
   client.println("<span style=\"white-space: pre-wrap;\">\t\t100\t50\t30\t0\t0\t0\t0\t0</span><br /><br />");
   client.println("<span style=\"font-weight:bold;\">Mode: </span><a href=\"/H\">Manual</a> - <a href=\"/H\">Automatic</a> - <a href=\"/H\">Off</a><br /><br />");
@@ -249,3 +266,54 @@ void sendHttpResponse(WiFiEspClient client)
   // The HTTP response ends with another blank line:
   client.println();
 }
+
+unsigned long sendNTPpacket(IPAddress& address)
+{
+  memset(packetBuffer, 0, NTP_PACKET_SIZE);
+  packetBuffer[0] = 0b11100011;   // LI, Version, Mode
+  packetBuffer[1] = 0;     // Stratum, or type of clock
+  packetBuffer[2] = 6;     // Polling Interval
+  packetBuffer[3] = 0xEC;  // Peer Clock Precision
+  // 8 bytes of zero for Root Delay & Root Dispersion
+  packetBuffer[12]  = 49;
+  packetBuffer[13]  = 0x4E;
+  packetBuffer[14]  = 49;
+  packetBuffer[15]  = 52;
+  // all NTP fields have been given values, now
+  // you can send a packet requesting a timestamp:
+  Udp.beginPacket(address, 123); //NTP requests are to port 123
+  Udp.write(packetBuffer, NTP_PACKET_SIZE);
+  Udp.endPacket();
+}
+
+void getNtpTime(){
+  debugSerial.println("Getting NTP Time...");
+  sendNTPpacket(timeServer); // send an NTP packet to a time server
+  delay(1000); // wait to see if a reply is available
+  debugSerial.print("Result of udp.parsePacket: ");
+  debugSerial.println(Udp.parsePacket());
+  if (Udp.parsePacket()) {
+    debugSerial.println("Packet received");
+    Udp.read(packetBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
+
+    //the timestamp starts at byte 40 of the received packet and is four bytes,
+    // or two words, long. First, esxtract the two words:
+    unsigned long highWord = word(packetBuffer[40], packetBuffer[41]);
+    unsigned long lowWord = word(packetBuffer[42], packetBuffer[43]);
+    
+    // combine the four bytes (two words) into a long integer
+    // this is NTP time (seconds since Jan 1 1900):
+    unsigned long secsSince1900 = highWord << 16 | lowWord;
+    
+    // Unix time starts on Jan 1 1970. In seconds, that's 2208988800:
+    const unsigned long seventyYears = 2208988800UL;
+    unsigned long epoch = secsSince1900 - seventyYears;
+    setTime(epoch);
+    debugSerial.print("Unix time = ");
+    debugSerial.println(epoch);
+    debugSerial.print(hour());
+    debugSerial.print(":");
+    debugSerial.println(minute());
+  }
+}
+
