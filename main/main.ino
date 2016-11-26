@@ -3,6 +3,7 @@
 #include "WiFiEsp.h"
 #include "WiFiEspUdp.h"
 #include <Timezone.h>    //https://github.com/JChristensen/Timezone
+#include <Wire.h>
 
 //Debug
 #define debugSerial SerialUSB
@@ -24,11 +25,15 @@ int status = WL_IDLE_STATUS;
 
 //NTP
 unsigned int lastNtpTry = 0;
-#define NTP_TRIES 3
+#define NTP_TRIES 5
 TimeChangeRule tcrCET = {"CET", First, Sun, Nov, 2, 60};   //UTC+1
 TimeChangeRule tcrCEST = {"CEST", First, Sun, Nov, 2, 60};   //UTC+2
 Timezone myTZ(tcrCET, tcrCEST);
 TimeChangeRule *tcr; 
+
+//EEPROM
+#define AT24C32_ADDRESS 0x50
+
 
 //LED
 #define NUMBER_OF_LED 8
@@ -70,7 +75,9 @@ void setup() {
     ntpTry++;
   }
   ntpTry = 1;
-  
+
+  //EEPROM
+  EEPROMInit();
 }
 
 
@@ -339,3 +346,48 @@ bool getNtpTime(){
   }
 }
 
+/********************
+ * EEPROM functions *
+ * Note: Those lines of code comes from https://github.com/cyberp/AT24Cx
+ * Unfortunately, this library does not seem to work on an arduino zero
+ * Despite, the tentatives of fixing this problem, I couldn't make it work for an arduino zero.
+ * There are no errors at compilation, but the arduino zero is bricked when the code is ran
+ * I've stripped down the library to have only the constructors and the Init method.
+ * The only way that does not brick the arduino, is to remove the line Wire.begin() in the init method.
+ * Of course, doing so break the library.
+ */
+
+void EEPROMInit() {
+  Wire.begin();
+}
+
+void EEPROMWrite(unsigned int address, byte data) {
+  Wire.beginTransmission(AT24C32_ADDRESS);
+  if(Wire.endTransmission()==0) {
+    Wire.beginTransmission(AT24C32_ADDRESS);
+    Wire.write(address >> 8);
+    Wire.write(address & 0xFF);
+    Wire.write(data);
+    Wire.endTransmission();
+    delay(20);
+  }
+}
+
+byte EEPROMRead(unsigned int address) {
+  byte b = 0;
+  int r = 0;
+  Wire.beginTransmission(AT24C32_ADDRESS);
+  if (Wire.endTransmission()==0) {
+    Wire.beginTransmission(AT24C32_ADDRESS);
+    Wire.write(address >> 8);
+    Wire.write(address & 0xFF);
+    if (Wire.endTransmission()==0) {
+      Wire.requestFrom(AT24C32_ADDRESS, 1);
+      while (Wire.available() > 0 && r<1) {
+        b = (byte)Wire.read();
+        r++;
+      }
+    }
+  }
+  return b;
+}
