@@ -20,7 +20,8 @@ int status = WL_IDLE_STATUS;
   const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
   byte packetBuffer[ NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
   WiFiEspUDP Udp;
-
+  unsigned int lastNtpTry = 0;
+  #define NTP_TRIES 3
 
 //LED
 #define NUMBER_OF_LED 8
@@ -52,8 +53,17 @@ void setup() {
   initPWM();
   debugSerial.println("PWM Initialized");
 
-  //Time
-  getNtpTime();
+  //NTP
+  debugSerial.println("First try to get NTP Time");
+  int ntpTry = 1;
+  while(!getNtpTime() && ntpTry <= NTP_TRIES){
+    debugSerial.println("Failed to get NTP Time. Waiting 3 seconds");
+    delay(3000);
+    debugSerial.println("Try :"+ntpTry); 
+    ntpTry++;
+  }
+  ntpTry = 1;
+  
 }
 
 
@@ -286,7 +296,7 @@ unsigned long sendNTPpacket(IPAddress& address)
   Udp.endPacket();
 }
 
-void getNtpTime(){
+bool getNtpTime(){
   debugSerial.println("Getting NTP Time...");
   sendNTPpacket(timeServer); // send an NTP packet to a time server
   delay(1000); // wait to see if a reply is available
@@ -314,6 +324,10 @@ void getNtpTime(){
     debugSerial.print(hour());
     debugSerial.print(":");
     debugSerial.println(minute());
+    return true;
+  }
+  else{
+    return false;
   }
 }
 
