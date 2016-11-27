@@ -34,6 +34,10 @@ TimeChangeRule *tcr;
 //EEPROM
 #define AT24C32_ADDRESS 0x50
 
+//SCHEDULE
+#define MAX_NMB_OF_SCHEDULE 20
+#define NMB_OF_ELEMENTS_PER_SCHEDULE 6
+byte schedule[MAX_NMB_OF_SCHEDULE][NMB_OF_ELEMENTS_PER_SCHEDULE];
 
 //LED
 #define NUMBER_OF_LED 8
@@ -76,8 +80,17 @@ void setup() {
   }
   ntpTry = 1;
 
+  //SCHEDULE
+  //Clear the schedule array
+  for(int i=0;i<MAX_NMB_OF_SCHEDULE;i++){
+    for(int j=0;j<NMB_OF_ELEMENTS_PER_SCHEDULE;j++){
+      schedule[i][j] = 0;
+    }
+  }
+
   //EEPROM
   EEPROMInit();
+  fetchSchedule();
 }
 
 
@@ -254,16 +267,21 @@ WiFiEspClient client = server.available();  // listen for incoming clients
         // you got two newline characters in a row
         // that's the end of the HTTP request, so send a response
         if (buf.endsWith("\r\n\r\n")) {
-          sendHttpResponse(client);
+          sendIndexHttpResponse(client);
           break;
         }
 
-        // Check to see if the client request was "GET /H" or "GET /L":
-        if (buf.endsWith("GET /H")) {
-          debugSerial.println("Turn led ON");
+        if (buf.endsWith("edit")) {
+          sendScheduleHttpResponse(client);
+          break;
         }
-        else if (buf.endsWith("GET /L")) {
-          debugSerial.println("Turn led OFF");
+        
+        // Check to see if the client request
+        else if (buf.endsWith("schedule")) {
+          debugSerial.println("Received a schedule. Parsing...");
+          parseHTTPSchedule(client);
+          pushSchedule();
+          break;
         }
       }
     }
@@ -274,21 +292,129 @@ WiFiEspClient client = server.available();  // listen for incoming clients
   }
 }
 
-void sendHttpResponse(WiFiEspClient client)
-{
+void sendIndexHttpResponse(WiFiEspClient client){
   client.println("HTTP/1.1 200 OK");
   client.println("Content-type:text/html");
   client.println();
 
   client.println("<html><head><title>Aquarium</title></head><body>");
-  client.println("<span style=\"font-weight:bold;\">Time: </span>"+String(hour())+":"+String(minute())+"<br /><br />");
+  client.println("<span style=\"font-weight:bold;\">Time: </span>"+String(weekdayEU())+" " +String(day())+"/"+String(month())+"/"+String(year())+" "+String(hour())+":"+String(minute())+"<br /><br />");
   client.println("<span style=\"white-space: pre-wrap; font-weight:bold;\">LED:\t1\t2\t3\t4\t5\t6\t7\t8</span><br />");
   client.println("<span style=\"white-space: pre-wrap;\">\t\t100\t50\t30\t0\t0\t0\t0\t0</span><br /><br />");
   client.println("<span style=\"font-weight:bold;\">Mode: </span><a href=\"/H\">Manual</a> - <a href=\"/H\">Automatic</a> - <a href=\"/H\">Off</a><br /><br />");
+  client.println("<a href=\"/edit\">View and edit schedules</a><br /><br />");
   client.println("</body></html>");
   
   // The HTTP response ends with another blank line:
   client.println();
+}
+
+void sendScheduleHttpResponse(WiFiEspClient client){
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-type:text/html");
+  client.println();
+
+  client.println("<html><head><title>Aquarium</title></head><body>");
+  client.println("<form action=\"\" method=\"get\"><textarea name=\"schedule\" rows=\"10\" cols=\"80\">"+printScheduleTable()+"</textarea><br /><input type=\"submit\"></form><br /><br />");
+  client.println("<span style=\"font-weight:bold;\">Template: </span>dayOfWeek - hours - minutes - mode - brightness - speed<br /><br />");
+  client.println("<span style=\"font-weight:bold;\">day of week : </span><br /><span style=\"white-space: pre-wrap;\">Monday &rarr; 1&nbsp&nbsp&nbsp&nbspTuesday &rarr; 2&nbsp&nbsp&nbsp&nbspWednesday &rarr; 4&nbsp&nbsp&nbsp&nbspThursday &rarr; 8&nbsp&nbsp&nbsp&nbspFriday &rarr; 16&nbsp&nbsp&nbsp&nbsp&nbspSaturday &rarr; 32&nbsp&nbsp&nbsp&nbspSunday &rarr; 64<br /><span style=\"white-space: pre-wrap;\">Example :\tdays of week: 31<br />\t\t\tweek-ends: 96<br />\t\t\tall days: 127</span><br />");
+  client.println("<span style=\"font-weight:bold;\">hour: </span>0-23<br />");
+  client.println("<span style=\"font-weight:bold;\">minute: </span>0, 15, 30, 45<br />");
+  client.println("<span style=\"font-weight:bold;\">mode : </span><span style=\"white-space: pre-wrap;\">\t0: OFF</span><br />");
+  client.print("<span style=\"font-weight:bold;\">brightness : </span><br /><span style=\"white-space: pre-wrap;\">\t0 &rarr; 0%\t\t1 &rarr; 5%\t\t2 &rarr; 10%\t\t3 &rarr; 15%\t\t4 &rarr; 20%\t\t5 &rarr; 25%\t\t6 &rarr; 30%\t\t7 &rarr; 35%\t\t8 &rarr; 40%\t\t9 &rarr; 45%\t\t10 &rarr; 50%<br />");
+  client.println("\t11 &rarr; 55%\t12 &rarr; 60%\t13 &rarr; 65%\t14 &rarr; 70%\t15 &rarr; 75%\t16 &rarr; 80%\t17 &rarr; 85%\t18 &rarr; 90%\t19 &rarr; 95%\t20 &rarr; 100%</span><br />");
+  client.println("<span style=\"font-weight:bold;\">speed : </span>0-7<br />");  
+  client.println("</body></html>");
+  
+  // The HTTP response ends with another blank line:
+  client.println();
+}
+
+void parseHTTPSchedule(WiFiEspClient client){
+  client.read(); // Read the "="
+  String schedule = String();
+  bool isNewLine = true;
+  char c;
+  int i = 0;
+  while(isNewLine){
+    c = client.read();
+    if (c != '%'){
+      schedule += c;
+    }
+    else{
+      buf.push(c);
+      while(!buf.endsWith("%0D%0A") && !buf.endsWith("%3B")){
+        c = client.read();
+        buf.push(c);
+      }
+
+      debugSerial.print("--> ");
+      debugSerial.println(schedule);
+      parseScheduleToArray(schedule, i);
+      
+      if(buf.endsWith("0D%0A")){
+        isNewLine = true;
+        schedule = String();
+        i++;
+      }
+      else{
+        isNewLine = false;
+      }
+    }
+  }
+}
+
+void parseScheduleToArray(String str, int i){
+  debugSerial.println("parsing schedule to array");
+  byte dayofweek, hours, minutes, modes, brightness, modespeed;
+  char strchar[30];
+  str.toCharArray(strchar, 30);
+
+  char *p = strchar;
+  char *stra;
+  int j = 0;
+  while ((stra = strtok_r(p, "-", &p)) != NULL){ // delimiter is the semicolon
+    String s = String(stra);
+    schedule[i][j] = (byte)s.toInt();
+    j++;
+  }
+  
+  /*if (sscanf(strchar, "%d-%d-%d-%d-%d-%d", &dayofweek, &hours, &minutes, &modes, &brightness, &modespeed) == 6) {
+    schedule[i][0] = dayofweek;
+    schedule[i][1] = hours;
+    schedule[i][2] = minutes;
+    schedule[i][3] = modes;
+    schedule[i][4] = brightness;
+    schedule[i][5] = modespeed;
+  }*/
+  debugSerial.println("Array filled in.");
+  debugSerial.println("New array: ");
+  //debugSerial.println(printScheduleTable());
+}
+
+String printScheduleTable(){
+  String str = "";
+  for(int i=0; i < MAX_NMB_OF_SCHEDULE; i++){
+    //If this schedule is empty, then, do not write it to the EEPROM.
+    bool isFinalSchedule = true;
+    for(int j=0; j<NMB_OF_ELEMENTS_PER_SCHEDULE;j++){
+      if(schedule[i][j] != 0)
+        isFinalSchedule = false;
+    }
+    
+    if(isFinalSchedule){
+      break;
+    }
+    else{
+      for(int j=0; j<NMB_OF_ELEMENTS_PER_SCHEDULE-1;j++){
+        str += schedule[i][j];
+        str += '-';
+      }
+      str += schedule[i][5];
+      str += "\n";
+    }
+  }
+  return str;
 }
 
 unsigned long sendNTPpacket(IPAddress& address)
@@ -346,6 +472,10 @@ bool getNtpTime(){
   }
 }
 
+byte weekdayEU(){
+  return (weekday()+6)%7;
+}
+
 /********************
  * EEPROM functions *
  * Note: Those lines of code comes from https://github.com/cyberp/AT24Cx
@@ -390,4 +520,51 @@ byte EEPROMRead(unsigned int address) {
     }
   }
   return b;
+}
+
+void fetchSchedule(){
+  int i;
+  for(i=0; i < EEPROMRead(0) && i < MAX_NMB_OF_SCHEDULE; i++){
+    byte firstByte = 10+i*4;
+    schedule[i][0] = EEPROMRead(firstByte); // Days of Week (1 = Monday)
+    byte hourminute = EEPROMRead(firstByte+1);
+    schedule[i][1] = (hourminute & B11111000 ) >> 3; // Hours
+    schedule[i][2] = (hourminute & B00000111 )*15; // Minutes
+    schedule[i][3] = EEPROMRead(firstByte+2); // Mode
+    byte brightnessspeed = EEPROMRead(firstByte+3);
+    schedule[i][4] = ((brightnessspeed & B11111000) >> 3)*5; // Brightness
+    schedule[i][5] = (brightnessspeed & B00000111); // Speed
+    
+    if(schedule[i][4] > 100){
+      debugSerial.println("ERROR in fetchSchedule: one of the brithness is too big.");
+    }
+  }
+  debugSerial.print(i);
+  debugSerial.println(" rules retrived from EEPROM");
+}
+
+void pushSchedule(){
+  int i;
+  for(i=0; i < MAX_NMB_OF_SCHEDULE; i++){
+    //If this schedule is empty, then, do not write it to the EEPROM.
+    bool isFinalSchedule = true;
+    for(int j=0; j<NMB_OF_ELEMENTS_PER_SCHEDULE;j++){
+      if(schedule[i][j] != 0)
+        isFinalSchedule = false;
+    }
+    if(isFinalSchedule)
+      break;
+
+    //Write this schedule to the EEPROM
+    byte firstByte = 10+i*4;
+    EEPROMWrite(firstByte, schedule[i][0]); // Days of week
+    byte hourminute = (schedule[i][1] << 3) + (schedule[i][2]/15); 
+    EEPROMWrite(firstByte+1, hourminute);
+    EEPROMWrite(firstByte+2, schedule[i][3]);
+    byte brightnessspeed = ((schedule[i][4] << 3)/5) + schedule[i][5];
+    EEPROMWrite(firstByte+3, brightnessspeed);
+  }
+  EEPROMWrite(0,i);
+  debugSerial.print(i);
+  debugSerial.println(" rules writen in EEPROM");
 }
