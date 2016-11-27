@@ -473,7 +473,11 @@ bool getNtpTime(){
 }
 
 byte weekdayEU(){
-  return (weekday()+6)%7;
+  byte value = weekday() - 1;
+  if (value != 0)
+    return value;
+  else
+    return 7;
 }
 
 /********************
