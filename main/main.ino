@@ -271,16 +271,16 @@ WiFiEspClient client = server.available();  // listen for incoming clients
           break;
         }
 
-        if (buf.endsWith("edit")) {
-          sendScheduleHttpResponse(client);
-          break;
-        }
-        
-        // Check to see if the client request
-        else if (buf.endsWith("schedule")) {
+
+        if (buf.endsWith("schedule")) {
           debugSerial.println("Received a schedule. Parsing...");
           parseHTTPSchedule(client);
           pushSchedule();
+          sendScheduleHttpResponse(client);
+          break;
+        }
+        else if (buf.endsWith("edit")) {
+          sendScheduleHttpResponse(client);
           break;
         }
       }
@@ -305,8 +305,7 @@ void sendIndexHttpResponse(WiFiEspClient client){
   client.println("<a href=\"/edit\">View and edit schedules</a><br /><br />");
   client.println("</body></html>");
   
-  // The HTTP response ends with another blank line:
-  client.println();
+  client.println(); // The HTTP response ends with another blank line:
 }
 
 void sendScheduleHttpResponse(WiFiEspClient client){
@@ -315,7 +314,8 @@ void sendScheduleHttpResponse(WiFiEspClient client){
   client.println();
 
   client.println("<html><head><title>Aquarium</title></head><body>");
-  client.println("<form action=\"\" method=\"get\"><textarea name=\"schedule\" rows=\"10\" cols=\"80\">"+printScheduleTable()+"</textarea><br /><input type=\"submit\"></form><br /><br />");
+  client.println("<a href=\"/\">Back to Home</a>");
+  client.println("<form action=\"/\" method=\"get\"><textarea name=\"schedule\" rows=\"10\" cols=\"80\">"+printScheduleTable()+"</textarea><br /><input type=\"submit\"></form><br /><br />");
   client.println("<span style=\"font-weight:bold;\">Template: </span>dayOfWeek - hours - minutes - mode - brightness - speed<br /><br />");
   client.println("<span style=\"font-weight:bold;\">day of week : </span><br /><span style=\"white-space: pre-wrap;\">Monday &rarr; 1&nbsp&nbsp&nbsp&nbspTuesday &rarr; 2&nbsp&nbsp&nbsp&nbspWednesday &rarr; 4&nbsp&nbsp&nbsp&nbspThursday &rarr; 8&nbsp&nbsp&nbsp&nbspFriday &rarr; 16&nbsp&nbsp&nbsp&nbsp&nbspSaturday &rarr; 32&nbsp&nbsp&nbsp&nbspSunday &rarr; 64<br /><span style=\"white-space: pre-wrap;\">Example :\tdays of week: 31<br />\t\t\tweek-ends: 96<br />\t\t\tall days: 127</span><br />");
   client.println("<span style=\"font-weight:bold;\">hour: </span>0-23<br />");
@@ -326,8 +326,7 @@ void sendScheduleHttpResponse(WiFiEspClient client){
   client.println("<span style=\"font-weight:bold;\">speed : </span>0-7<br />");  
   client.println("</body></html>");
   
-  // The HTTP response ends with another blank line:
-  client.println();
+  client.println(); // The HTTP response ends with another blank line:
 }
 
 void parseHTTPSchedule(WiFiEspClient client){
@@ -338,12 +337,12 @@ void parseHTTPSchedule(WiFiEspClient client){
   int i = 0;
   while(isNewLine){
     c = client.read();
-    if (c != '%'){
+    if (c != '%' && c!= ' '){
       schedule += c;
     }
     else{
       buf.push(c);
-      while(!buf.endsWith("%0D%0A") && !buf.endsWith("%3B")){
+      while(!buf.endsWith("%0D%0A") && !buf.endsWith(" ")){
         c = client.read();
         buf.push(c);
       }
