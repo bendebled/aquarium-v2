@@ -10,8 +10,8 @@
 
 //Wifi
 #define espSerial Serial1
-char ssid[] = "SSID";
-char pass[] = "PASSWD";
+char ssid[] = "bbox2-8356";
+char pass[] = "EYLNAHST";
 int status = WL_IDLE_STATUS;
   //Server
   WiFiEspServer server(80);
@@ -38,6 +38,7 @@ TimeChangeRule *tcr;
 #define MAX_NMB_OF_SCHEDULE 20
 #define NMB_OF_ELEMENTS_PER_SCHEDULE 6
 byte schedule[MAX_NMB_OF_SCHEDULE][NMB_OF_ELEMENTS_PER_SCHEDULE];
+byte nmbOfSchdules = 0;
 
 //LED
 #define NUMBER_OF_LED 8
@@ -51,7 +52,7 @@ void setup() {
   //Wifi
   espSerial.begin(115200);
   WiFi.init(&espSerial);
-  if (WiFi.status() == WL_NO_SHIELD) 
+  if (WiFi.status() == WL_NO_SHIELD)
     debugSerial.println("WiFi shield not present");
   while ( status != WL_CONNECTED) {
     debugSerial.print("Attempting to connect to WPA SSID: ");
@@ -75,7 +76,7 @@ void setup() {
   while(!getNtpTime() && ntpTry <= NTP_TRIES){
     debugSerial.println("Failed to get NTP Time. Waiting 3 seconds");
     delay(3000);
-    debugSerial.println("Try :"+ntpTry); 
+    debugSerial.println("Try :"+ntpTry);
     ntpTry++;
   }
   ntpTry = 1;
@@ -91,6 +92,13 @@ void setup() {
   //EEPROM
   EEPROMInit();
   fetchSchedule();
+
+  //SCHEDULE
+  //Find the next schedule
+  debugSerial.print("NEXT SCHEDULE: ");
+  debugSerial.println(getNextSchedule());
+
+
 }
 
 
@@ -479,6 +487,61 @@ byte weekdayEU(){
     return 7;
 }
 
+
+time_t tmConvert_t(int YYYY, byte MM, byte DD, byte hh, byte mm, byte ss) {
+  tmElements_t tmSet;
+  tmSet.Year = YYYY - 1970;
+  tmSet.Month = MM;
+  tmSet.Day = DD;
+  tmSet.Hour = hh;
+  tmSet.Minute = mm;
+  tmSet.Second = ss;
+  return makeTime(tmSet);         //convert to time_t
+}
+
+byte getNextSchedule(){
+  //First, let's find schedules of today
+  //If we don't find a schedule for today, we will look for a schedule the next day and so on.
+  //While searching for a schedule, we save the schedule that is about to happen.
+  unsigned int scheduledIn = 65535;
+  byte nextScheduleID = 127;
+  byte checkDay = weekdayEU();
+  byte dayDiff = 0;
+  while(nextScheduleID == 127){
+    for(int i = 0;i<nmbOfSchdules;i++){
+      if(isScheduleActiveToday(schedule[i][0], checkDay)){
+        debugSerial.print("#");
+        unsigned int scheduleHour = schedule[i][1];
+        unsigned int scheduleMinute = schedule[i][2];
+        unsigned int scheduledInLocal = (dayDiff*24*60 + scheduleHour*60 + scheduleMinute) - (hour()*60 + minute()); //time of schedule - current time
+        if (scheduledInLocal < scheduledIn){
+          scheduledIn = scheduledInLocal;
+          nextScheduleID = i;
+          debugSerial.print("Found new schedule: ");
+          debugSerial.println(i);
+        }
+      }
+    }
+    //If we didn't find a schedule for the day "checkday", we will look for the day after that.
+    if(nextScheduleID == 127){
+      checkDay++;
+      dayDiff++;
+      if(checkDay == 8)
+        checkDay = 1;
+    }
+  }
+  if(nextScheduleID == 127)
+    debugSerial.println("ERROR: no next schedule found.");
+  return nextScheduleID;
+}
+
+bool isScheduleActiveToday(byte scheduleDay, byte day){
+  if(bitRead(scheduleDay, day-1) == 1)
+    return true;
+  else
+    return false;
+}
+
 /********************
  * EEPROM functions *
  * Note: Those lines of code comes from https://github.com/cyberp/AT24Cx
@@ -527,7 +590,8 @@ byte EEPROMRead(unsigned int address) {
 
 void fetchSchedule(){
   int i;
-  for(i=0; i < EEPROMRead(0) && i < MAX_NMB_OF_SCHEDULE; i++){
+  nmbOfSchdules = EEPROMRead(0);
+  for(i=0; i < nmbOfSchdules && i < MAX_NMB_OF_SCHEDULE; i++){
     byte firstByte = 10+i*4;
     schedule[i][0] = EEPROMRead(firstByte); // Days of Week (1 = Monday)
     byte hourminute = EEPROMRead(firstByte+1);
@@ -544,6 +608,7 @@ void fetchSchedule(){
   }
   debugSerial.print(i);
   debugSerial.println(" rules retrived from EEPROM");
+  debugSerial.println(schedule[0][0]);
 }
 
 void pushSchedule(){
