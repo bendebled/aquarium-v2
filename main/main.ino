@@ -1,17 +1,17 @@
-#include <Time.h>
-#include <TimeLib.h>
 #include "WiFiEsp.h"
 #include "WiFiEspUdp.h"
-#include <Timezone.h>    //https://github.com/JChristensen/Timezone
 #include <Wire.h>
+#include <Timezone.h>    //https://github.com/JChristensen/Timezone
+#include <TimeLib.h>
+#include <RTCZero.h>
 
 //Debug
 #define debugSerial SerialUSB
 
 //Wifi
 #define espSerial Serial1
-char ssid[] = "bbox2-8356";
-char pass[] = "EYLNAHST";
+char ssid[] = "SSID";
+char pass[] = "PASSWD";
 int status = WL_IDLE_STATUS;
     //Server
     WiFiEspServer server(80);
@@ -39,6 +39,10 @@ TimeChangeRule *tcr;
 #define NMB_OF_ELEMENTS_PER_SCHEDULE 6
 byte schedule[MAX_NMB_OF_SCHEDULE][NMB_OF_ELEMENTS_PER_SCHEDULE];
 byte nmbOfSchdules = 0;
+
+//RTC
+RTCZero rtc;
+
 
 //LED
 #define NUMBER_OF_LED 8
@@ -80,6 +84,13 @@ void setup() {
         ntpTry++;
     }
     ntpTry = 1;
+
+    //RTC
+    rtc.begin();
+    rtc.setEpoch(now());
+    debugSerial.print("Hour: ");
+    debugSerial.println(rtc.getHours());
+
 
     //SCHEDULE
     //Clear the schedule array
