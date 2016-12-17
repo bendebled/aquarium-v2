@@ -10,8 +10,8 @@
 
 //Wifi
 #define espSerial Serial1
-char ssid[] = "SSID";
-char pass[] = "PASSWD";
+char ssid[] = "bbox2-8356";
+char pass[] = "EYLNAHST";
 int status = WL_IDLE_STATUS;
     //Server
     WiFiEspServer server(80);
@@ -60,6 +60,10 @@ void setup() {
     //DEBUG LED
     pinMode(DEBUG_LED, OUTPUT);
     digitalWrite(DEBUG_LED, LOW);
+
+    unsigned int toto = -10;
+    debugSerial.print("***");
+    debugSerial.println(toto);
 
     //Wifi
     espSerial.begin(115200);
@@ -113,11 +117,16 @@ void setup() {
     //Find the next schedule
     debugSerial.print("NEXT SCHEDULE: ");
     getNextSchedule();
+    debugSerial.println(printScheduleTable());
 
     debugSerial.print("current epoch : ");
     debugSerial.println(rtc.getEpoch());
 
-    debugSerial.println(rtc.getHours());
+    debugSerial.print("NEXT SCHEDULE ID: ");
+    debugSerial.print(nextScheduleID);
+    debugSerial.print(" - ");
+    debugSerial.println(nextScheduleEpoch);
+
     rtc.setAlarmEpoch(nextScheduleEpoch);
     rtc.enableAlarm(rtc.MATCH_YYMMDDHHMMSS);
     rtc.attachInterrupt(alarmMatch);
@@ -574,15 +583,14 @@ void getNextSchedule() {
     while (nextScheduleID == 127) {
         for (int i = 0; i < nmbOfSchdules; i++) {
             if (isScheduleActiveToday(schedule[i][0], checkDay)) {
-                debugSerial.print("#");
                 unsigned int scheduleHour = schedule[i][1];
                 unsigned int scheduleMinute = schedule[i][2];
                 unsigned int scheduledInLocal = (dayDiff * 24 * 60 + scheduleHour * 60 + scheduleMinute) -
                                                 (hour() * 60 + minute()); //time of schedule - current time
-                nextScheduleEpoch = now() + scheduledInLocal*60;
-                if (scheduledInLocal < scheduledIn) {
+                if (scheduledInLocal > 10 && scheduledInLocal < scheduledIn) {
                     scheduledIn = scheduledInLocal;
                     nextScheduleID = i;
+                    nextScheduleEpoch = now() + scheduledInLocal*60 - second();
                     debugSerial.print("Found new schedule: ");
                     debugSerial.println(i);
                 }
@@ -704,6 +712,34 @@ void pushSchedule() {
 }
 
 void alarmMatch() {
-    digitalWrite(DEBUG_LED, HIGH);
+    setMode(schedule[nextScheduleID][3]);
+    getNextSchedule();
+    debugSerial.print("==>");
+    debugSerial.println(nextScheduleID);
+
+    rtc.setAlarmEpoch(nextScheduleEpoch);
+    rtc.enableAlarm(rtc.MATCH_YYMMDDHHMMSS);
+    rtc.attachInterrupt(alarmMatch);
+
     debugSerial.println("ALARM MATCH");
+}
+
+void setMode(byte m) {
+    switch (m) {
+        case 0:
+            for (int i =0; i<NUMBER_OF_LED; i++){
+                setPWM(i, 0);
+            }
+            digitalWrite(DEBUG_LED, LOW);
+            break;
+        case 1:
+            for (int i =0; i<NUMBER_OF_LED; i++){
+                setPWM(i, 10000);
+            }
+            digitalWrite(DEBUG_LED, HIGH);
+            break;
+        default:
+            debugSerial.println("Wrong Mode");
+            break;
+    }
 }
