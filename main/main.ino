@@ -39,19 +39,27 @@ TimeChangeRule *tcr;
 #define NMB_OF_ELEMENTS_PER_SCHEDULE 6
 byte schedule[MAX_NMB_OF_SCHEDULE][NMB_OF_ELEMENTS_PER_SCHEDULE];
 byte nmbOfSchdules = 0;
+byte nextScheduleID = 127;
+unsigned long nextScheduleEpoch = 0;
 
 //RTC
 RTCZero rtc;
 
-
 //LED
 #define NUMBER_OF_LED 8
+
+//DEBUG LED
+#define DEBUG_LED 9
 
 void setup() {
     //Debug
     debugSerial.begin(9600);
     while (!debugSerial);
     debugSerial.println("---");
+
+    //DEBUG LED
+    pinMode(DEBUG_LED, OUTPUT);
+    digitalWrite(DEBUG_LED, LOW);
 
     //Wifi
     espSerial.begin(115200);
@@ -88,9 +96,6 @@ void setup() {
     //RTC
     rtc.begin();
     rtc.setEpoch(now());
-    debugSerial.print("Hour: ");
-    debugSerial.println(rtc.getHours());
-
 
     //SCHEDULE
     //Clear the schedule array
@@ -107,11 +112,43 @@ void setup() {
     //SCHEDULE
     //Find the next schedule
     debugSerial.print("NEXT SCHEDULE: ");
-    debugSerial.println(getNextSchedule());
+    getNextSchedule();
 
+    debugSerial.print("current epoch : ");
+    debugSerial.println(rtc.getEpoch());
 
+    debugSerial.println(rtc.getHours());
+    rtc.setAlarmEpoch(nextScheduleEpoch);
+    rtc.enableAlarm(rtc.MATCH_YYMMDDHHMMSS);
+    rtc.attachInterrupt(alarmMatch);
+    //rtc.standbyMode();
+
+    debugSerial.print("current time : ");
+    debugSerial.print(rtc.getDay());
+    debugSerial.print("-");
+    debugSerial.print(rtc.getMonth());
+    debugSerial.print("-");
+    debugSerial.print(rtc.getYear());
+    debugSerial.print(" ");
+    debugSerial.print(rtc.getHours());
+    debugSerial.print(":");
+    debugSerial.print(rtc.getMinutes());
+    debugSerial.print(":");
+    debugSerial.println(rtc.getSeconds());
+
+    debugSerial.print("alarm time : ");
+    debugSerial.print(rtc.getAlarmDay());
+    debugSerial.print("-");
+    debugSerial.print(rtc.getAlarmMonth());
+    debugSerial.print("-");
+    debugSerial.print(rtc.getAlarmYear());
+    debugSerial.print(" ");
+    debugSerial.print(rtc.getAlarmHours());
+    debugSerial.print(":");
+    debugSerial.print(rtc.getAlarmMinutes());
+    debugSerial.print(":");
+    debugSerial.println(rtc.getAlarmSeconds());
 }
-
 
 void loop() {
     webServer();
@@ -119,10 +156,10 @@ void loop() {
 
 /*
  * This function inits the pins 2,3,4,5,10,11,12 and 13 for PWM.
- * 
- * By default, the PWM frequency is 185kHz on a Arduino Zero. This is too fast for the LED drivers. 
+ *
+ * By default, the PWM frequency is 185kHz on a Arduino Zero. This is too fast for the LED drivers.
  * This function will init the PWM to work at a frequency of 100Hz.
- * 
+ *
  * For more informations on how this function work, please read:
  *  - Basic informations on SAMD21 timers necessary for PWM: https://forum.arduino.cc/index.php?topic=330735.0
  *  - This forum: https://forum.arduino.cc/index.php?topic=346731.0
@@ -363,14 +400,22 @@ void sendScheduleHttpResponse(WiFiEspClient client) {
 
 void parseHTTPSchedule(WiFiEspClient client) {
     client.read(); // Read the "="
-    String schedule = String();
+    String scheduleStr = String();
+
+    //Clear the schedule array
+    for (int i = 0; i < MAX_NMB_OF_SCHEDULE; i++){
+        for(int j = 0; j < NMB_OF_ELEMENTS_PER_SCHEDULE; j++){
+            schedule[i][j] = 0;
+        }
+    }
+
     bool isNewLine = true;
     char c;
     int i = 0;
     while (isNewLine) {
         c = client.read();
         if (c != '%' && c != ' ') {
-            schedule += c;
+            scheduleStr += c;
         } else {
             buf.push(c);
             while (!buf.endsWith("%0D%0A") && !buf.endsWith(" ")) {
@@ -379,12 +424,12 @@ void parseHTTPSchedule(WiFiEspClient client) {
             }
 
             debugSerial.print("--> ");
-            debugSerial.println(schedule);
-            parseScheduleToArray(schedule, i);
+            debugSerial.println(scheduleStr);
+            parseScheduleToArray(scheduleStr, i);
 
             if (buf.endsWith("0D%0A")) {
                 isNewLine = true;
-                schedule = String();
+                scheduleStr = String();
                 i++;
             } else {
                 isNewLine = false;
@@ -518,12 +563,12 @@ time_t tmConvert_t(int YYYY, byte MM, byte DD, byte hh, byte mm, byte ss) {
     return makeTime(tmSet);         //convert to time_t
 }
 
-byte getNextSchedule() {
-    //First, let's find schedules of today
+void getNextSchedule() {
+    //First, let's find scheduleStrs of today
     //If we don't find a schedule for today, we will look for a schedule the next day and so on.
     //While searching for a schedule, we save the schedule that is about to happen.
     unsigned int scheduledIn = 65535;
-    byte nextScheduleID = 127;
+    nextScheduleID = 127;
     byte checkDay = weekdayEU();
     byte dayDiff = 0;
     while (nextScheduleID == 127) {
@@ -534,6 +579,7 @@ byte getNextSchedule() {
                 unsigned int scheduleMinute = schedule[i][2];
                 unsigned int scheduledInLocal = (dayDiff * 24 * 60 + scheduleHour * 60 + scheduleMinute) -
                                                 (hour() * 60 + minute()); //time of schedule - current time
+                nextScheduleEpoch = now() + scheduledInLocal*60;
                 if (scheduledInLocal < scheduledIn) {
                     scheduledIn = scheduledInLocal;
                     nextScheduleID = i;
@@ -550,9 +596,9 @@ byte getNextSchedule() {
                 checkDay = 1;
         }
     }
+
     if (nextScheduleID == 127)
         debugSerial.println("ERROR: no next schedule found.");
-    return nextScheduleID;
 }
 
 bool isScheduleActiveToday(byte scheduleDay, byte day) {
@@ -655,4 +701,9 @@ void pushSchedule() {
     EEPROMWrite(0, i);
     debugSerial.print(i);
     debugSerial.println(" rules writen in EEPROM");
+}
+
+void alarmMatch() {
+    digitalWrite(DEBUG_LED, HIGH);
+    debugSerial.println("ALARM MATCH");
 }
