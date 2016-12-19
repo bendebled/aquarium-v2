@@ -57,6 +57,8 @@ RTCZero rtc;
 #define DEBUG_LED A0
 #define BUZZER A4
 #define DS18B20 A3
+#define BUTTON_LEFT 8
+#define BUTTON_RIGHT 9
 
 //SCREEN
 //U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   // For 0.96" oled screen
@@ -65,6 +67,11 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   /
 //DS18B20
 OneWire oneWire(DS18B20);
 DallasTemperature ds18b20(&oneWire);
+
+//BUTTONS
+volatile unsigned long lastLeftPressed = 0;
+volatile unsigned long lastRightPressed = 0;
+unsigned int pressDelay = 50;
 
 //Bitmaps
 //Use graphene to convert png to hexa
@@ -141,27 +148,26 @@ void setup() {
     u8g2.clearBuffer();
     u8g2.drawBitmap( 16, 0, 12, 64, settings);
     u8g2.sendBuffer();
-    delay(2000);
+    delay(250);
 
     u8g2.clearBuffer();
     u8g2.drawBitmap( 16, 0, 12, 64, cloud);
     u8g2.sendBuffer();
-    delay(2000);
+    delay(250);
 
     u8g2.clearBuffer();
     u8g2.drawBitmap( 16, 0, 12, 64, cloudright);
     u8g2.sendBuffer();
-    delay(2000);
+    delay(250);
 
     u8g2.clearBuffer();
     u8g2.drawBitmap( 16, 0, 12, 64, cloudleft);
     u8g2.sendBuffer();
-    delay(2000);
+    delay(250);
 
     u8g2.clearBuffer();
     u8g2.drawBitmap( 16, 0, 12, 64, cloudcircle);
     u8g2.sendBuffer();
-    delay(2000);
 
     //DS18B20
     ds18b20.begin();
@@ -170,6 +176,14 @@ void setup() {
     SerialUSB.println("DONE");
     SerialUSB.print("Temperature for the device 1 (index 0) is: ");
     SerialUSB.println(ds18b20.getTempCByIndex(0));
+
+    //BUTTONS
+    pinMode(BUTTON_LEFT, INPUT_PULLDOWN);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_LEFT), buttonLeft, RISING);
+
+    pinMode(BUTTON_RIGHT, INPUT_PULLDOWN);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_RIGHT), buttonRight, RISING);
+
 
     //Wifi
     espSerial.begin(115200);
@@ -270,6 +284,7 @@ void setup() {
 
 void loop() {
     webServer();
+    manageButtons();
 }
 
 /*
@@ -851,4 +866,37 @@ void setMode(byte m) {
             debugSerial.println("Wrong Mode");
             break;
     }
+}
+
+void buttonLeft(){
+    lastLeftPressed = millis();
+}
+
+void buttonRight(){
+    lastRightPressed = millis();
+}
+
+void manageButtons(){
+    if(millis() - lastLeftPressed < pressDelay){
+        delay(pressDelay*3);
+        if(millis() - lastRightPressed < (pressDelay * 4)){
+            debugSerial.println("BUTTON LEFT & RIGHT");
+        }
+        else{
+            debugSerial.println("BUTTON LEFT");
+        }
+        delay(100);
+    }
+    else if(millis() - lastRightPressed < pressDelay){
+        delay(pressDelay*3);
+        if(millis() - lastLeftPressed < (pressDelay * 4)){
+            debugSerial.println("BUTTON LEFT & RIGHT");
+        }
+        else{
+            debugSerial.println("BUTTON RIGHT");
+        }
+        delay(100);
+    }
+    lastLeftPressed = 0;
+    lastRightPressed = 0;
 }
