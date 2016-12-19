@@ -5,6 +5,8 @@
 #include <TimeLib.h>
 #include <RTCZero.h>
 #include <U8g2lib.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 //Debug
 #define debugSerial SerialUSB
@@ -60,6 +62,10 @@ RTCZero rtc;
 //U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   // For 0.96" oled screen
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   // For 1.3" oled screen
 
+//DS18B20
+OneWire oneWire(DS18B20);
+DallasTemperature ds18b20(&oneWire);
+
 //Bitmaps
 const uint8_t settings[] = {
         0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x6,0x0,0x0,0x0,0x3f,0x0,0xf,0x0,0x0,0x0,0xff,0x80,0x1f,0x80,0x0,0x1,0xe3,0x80,0x39,0xc0,0x0,0x3,0x87,0x0,0x38,0xe0,0x0,0x7,0xe,0x0,0x1c,0x70,0x0,0x6,0x1c,0x18,
@@ -113,6 +119,14 @@ void setup() {
     //DEBUG LED
     pinMode(DEBUG_LED, OUTPUT);
     digitalWrite(DEBUG_LED, LOW);
+
+    //DS18B20
+    ds18b20.begin();
+    SerialUSB.print("Requesting temperatures...");
+    ds18b20.requestTemperatures();
+    SerialUSB.println("DONE");
+    SerialUSB.print("Temperature for the device 1 (index 0) is: ");
+    SerialUSB.println(ds18b20.getTempCByIndex(0));
 
     //Wifi
     espSerial.begin(115200);
