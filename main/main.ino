@@ -49,8 +49,12 @@ RTCZero rtc;
 //LED
 #define NUMBER_OF_LED 8
 
-//DEBUG LED
-#define DEBUG_LED 9
+//PINS
+#define RELAY_1 26 //Pin 25 (PA27)
+#define RELAY_2 27 //Pin 27 (PA28)
+#define DEBUG_LED A0
+#define BUZZER A4
+#define DS18B20 A3
 
 //SCREEN
 //U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   // For 0.96" oled screen
@@ -109,10 +113,6 @@ void setup() {
     //DEBUG LED
     pinMode(DEBUG_LED, OUTPUT);
     digitalWrite(DEBUG_LED, LOW);
-
-    unsigned int toto = -10;
-    debugSerial.print("***");
-    debugSerial.println(toto);
 
     //Wifi
     espSerial.begin(115200);
