@@ -425,6 +425,7 @@ void updateDisplay(){
                 u8g2.sendBuffer();
                 break;
         }
+        displayStateChanged = false;
     }
 }
 
