@@ -73,6 +73,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);   /
 #define DISPLAY_STATE_CLOUD_CIRCLE 23
 int displayState = DISPLAY_STATE_INFO;
 byte displayLine = 1;
+bool displayStateChanged = false;
 
 //DS18B20
 OneWire oneWire(DS18B20);
@@ -307,116 +308,123 @@ void loop() {
     updateDisplay();
 }
 
+void updateDisplayState(int state){
+    displayState = state;
+    displayStateChanged = true;
+}
+
 void buttonsAction(int button){
     switch(displayState){
         case DISPLAY_STATE_INFO:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_ON;
+                updateDisplayState(DISPLAY_STATE_ON);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_SETTINGS;
+                updateDisplayState(DISPLAY_STATE_SETTINGS);
             break;
         case DISPLAY_STATE_ON:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD;
+                updateDisplayState(DISPLAY_STATE_CLOUD);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_INFO;
+                updateDisplayState(DISPLAY_STATE_INFO);
             if(button == LEFT_RIGHT_PRESSED)
                 setMode(1);
             break;
         case DISPLAY_STATE_CLOUD:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_OFF;
+                updateDisplayState(DISPLAY_STATE_OFF);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_ON;
+                updateDisplayState(DISPLAY_STATE_ON);
             if(button == LEFT_RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD_RIGHT;
+                updateDisplayState(DISPLAY_STATE_CLOUD_RIGHT);
             break;
         case DISPLAY_STATE_OFF:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_SETTINGS;
+                updateDisplayState(DISPLAY_STATE_SETTINGS);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD;
+                updateDisplayState(DISPLAY_STATE_CLOUD);
             if(button == LEFT_RIGHT_PRESSED)
                 setMode(0);
             break;
         case DISPLAY_STATE_SETTINGS:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_INFO;
+                updateDisplayState(DISPLAY_STATE_INFO);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_OFF;
+                updateDisplayState(DISPLAY_STATE_OFF);
             break;
 
         case DISPLAY_STATE_CLOUD_RIGHT:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD_LEFT;
+                updateDisplayState(DISPLAY_STATE_CLOUD_LEFT);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD_CIRCLE;
+                updateDisplayState(DISPLAY_STATE_CLOUD_CIRCLE);
             if(button == LEFT_RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_INFO;
+                updateDisplayState(DISPLAY_STATE_INFO);
             break;
         case DISPLAY_STATE_CLOUD_LEFT:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD_CIRCLE;
+                updateDisplayState(DISPLAY_STATE_CLOUD_CIRCLE);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD_RIGHT;
+                updateDisplayState(DISPLAY_STATE_CLOUD_RIGHT);
             if(button == LEFT_RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_INFO;
+                updateDisplayState(DISPLAY_STATE_INFO);
             break;
         case DISPLAY_STATE_CLOUD_CIRCLE:
             if(button == RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD_RIGHT;
+                updateDisplayState(DISPLAY_STATE_CLOUD_RIGHT);
             if(button == LEFT_PRESSED)
-                displayState = DISPLAY_STATE_CLOUD_LEFT;
+                updateDisplayState(DISPLAY_STATE_CLOUD_LEFT);
             if(button == LEFT_RIGHT_PRESSED)
-                displayState = DISPLAY_STATE_INFO;
+                updateDisplayState(DISPLAY_STATE_INFO);
             break;
     }
 }
 
 void updateDisplay(){
-    switch (displayState){
-        case DISPLAY_STATE_INFO:
-            u8g2.clearBuffer();
-            clearLogDisplay();
-            logDisplay(String(rtc.getHours()) + ":" + String(rtc.getMinutes()));
-            logDisplay(IpAddress2String(WiFi.localIP()));
-            u8g2.sendBuffer();
-            break;
-        case DISPLAY_STATE_ON:
-            u8g2.clearBuffer();
-            u8g2.drawBitmap( 0, 0, 16, 64, on);
-            u8g2.sendBuffer();
-            break;
-        case DISPLAY_STATE_CLOUD:
-            u8g2.clearBuffer();
-            u8g2.drawBitmap( 16, 0, 12, 64, cloud);
-            u8g2.sendBuffer();
-            break;
-        case DISPLAY_STATE_OFF:
-            u8g2.clearBuffer();
-            u8g2.drawBitmap( 0, 0, 16, 64, off);
-            u8g2.sendBuffer();
-            break;
-        case DISPLAY_STATE_SETTINGS:
-            u8g2.clearBuffer();
-            u8g2.drawBitmap( 16, 0, 12, 64, settings);
-            u8g2.sendBuffer();
-            break;
-        case DISPLAY_STATE_CLOUD_RIGHT:
-            u8g2.clearBuffer();
-            u8g2.drawBitmap( 16, 0, 12, 64, cloudright);
-            u8g2.sendBuffer();
-            break;
-        case DISPLAY_STATE_CLOUD_LEFT:
-            u8g2.clearBuffer();
-            u8g2.drawBitmap( 16, 0, 12, 64, cloudleft);
-            u8g2.sendBuffer();
-            break;
-        case DISPLAY_STATE_CLOUD_CIRCLE:
-            u8g2.clearBuffer();
-            u8g2.drawBitmap( 16, 0, 12, 64, cloudcircle);
-            u8g2.sendBuffer();
-            break;
+    if(displayStateChanged){
+        switch (displayState){
+            case DISPLAY_STATE_INFO:
+                u8g2.clearBuffer();
+                clearLogDisplay();
+                logDisplay(String(rtc.getHours()) + ":" + String(rtc.getMinutes()));
+                logDisplay(IpAddress2String(WiFi.localIP()));
+                u8g2.sendBuffer();
+                break;
+            case DISPLAY_STATE_ON:
+                u8g2.clearBuffer();
+                u8g2.drawBitmap( 0, 0, 16, 64, on);
+                u8g2.sendBuffer();
+                break;
+            case DISPLAY_STATE_CLOUD:
+                u8g2.clearBuffer();
+                u8g2.drawBitmap( 16, 0, 12, 64, cloud);
+                u8g2.sendBuffer();
+                break;
+            case DISPLAY_STATE_OFF:
+                u8g2.clearBuffer();
+                u8g2.drawBitmap( 0, 0, 16, 64, off);
+                u8g2.sendBuffer();
+                break;
+            case DISPLAY_STATE_SETTINGS:
+                u8g2.clearBuffer();
+                u8g2.drawBitmap( 16, 0, 12, 64, settings);
+                u8g2.sendBuffer();
+                break;
+            case DISPLAY_STATE_CLOUD_RIGHT:
+                u8g2.clearBuffer();
+                u8g2.drawBitmap( 16, 0, 12, 64, cloudright);
+                u8g2.sendBuffer();
+                break;
+            case DISPLAY_STATE_CLOUD_LEFT:
+                u8g2.clearBuffer();
+                u8g2.drawBitmap( 16, 0, 12, 64, cloudleft);
+                u8g2.sendBuffer();
+                break;
+            case DISPLAY_STATE_CLOUD_CIRCLE:
+                u8g2.clearBuffer();
+                u8g2.drawBitmap( 16, 0, 12, 64, cloudcircle);
+                u8g2.sendBuffer();
+                break;
+        }
     }
 }
 
@@ -1060,7 +1068,6 @@ void logDisplay(String str){
     if(displayLine > 5){
         clearLogDisplay();
     }
-    debugSerial.println(str);
     u8g2.setFont(u8g2_font_6x10_mf);
     u8g2.setCursor(0, displayLine*12);
     u8g2.print(str);
