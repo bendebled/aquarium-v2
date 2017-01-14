@@ -33,6 +33,7 @@ TimeChangeRule tcrCET = {"CET", First, Sun, Nov, 2, 60};   //UTC+1
 TimeChangeRule tcrCEST = {"CEST", First, Sun, Nov, 2, 60};   //UTC+2
 Timezone myTZ(tcrCET, tcrCEST);
 TimeChangeRule *tcr;
+unsigned long lastNtpSync = 0;
 
 //EEPROM
 #define AT24C32_ADDRESS 0x50
@@ -214,7 +215,7 @@ void setup() {
         status = WiFi.begin(ssid, pass);
     }
     debugSerial.println("You're connected to the network");
-    logDisplay("[V] WiFi");
+    logDisplay("[V] WiFi: " + IpAddress2String(WiFi.localIP()));
     printWifiStatus();
     //Server
     server.begin();
@@ -232,9 +233,9 @@ void setup() {
     int ntpTry = 1;
     while (!getNtpTime() && ntpTry <= NTP_TRIES) {
         debugSerial.println("Failed to get NTP Time. Waiting 3 seconds");
-        logDisplay("[X] NTP Try " + ntpTry);
+        logDisplay("[X] NTP Try " + String(ntpTry));
         delay(3000);
-        debugSerial.println("Try :" + ntpTry);
+        debugSerial.println("Try :" + String(ntpTry));
         ntpTry++;
     }
     ntpTry = 1;
@@ -306,6 +307,7 @@ void loop() {
     webServer();
     buttonsAction(manageButtons());
     updateDisplay();
+    keepTimeInSync();
 }
 
 void updateDisplayState(int state){
@@ -376,6 +378,26 @@ void buttonsAction(int button){
             if(button == LEFT_RIGHT_PRESSED)
                 updateDisplayState(DISPLAY_STATE_INFO);
             break;
+    }
+}
+
+void keepTimeInSync(){
+    if(millis() - lastNtpSync > 86400*1000){
+        logDisplay("NTP Try");
+        debugSerial.println("First try to get NTP Time");
+        int ntpTry = 1;
+        while (!getNtpTime() && ntpTry <= NTP_TRIES) {
+            debugSerial.println("Failed to get NTP Time. Waiting 3 seconds");
+            logDisplay("[X] NTP Try " + ntpTry);
+            delay(3000);
+            debugSerial.println("Try :" + ntpTry);
+            ntpTry++;
+        }
+        ntpTry = 1;
+        logDisplay("[OK] NTP");
+
+        rtc.setEpoch(now());
+        lastNtpSync = millis();
     }
 }
 
@@ -625,13 +647,15 @@ void webServer() {
                     sendScheduleHttpResponse(client);
                     break;
                 }
-//                else if (buf.endsWith("MODE1")) {
-//                    setMode(1);
-//                    break;
-//                } else if (buf.endsWith("MODE0")) {
-//                    setMode(0);
-//                    break;
-//                }
+                else if (buf.endsWith("MODE1")) {
+                    setMode(1);
+                    sendIndexHttpResponse(client);
+                    break;
+                } else if (buf.endsWith("MODE0")) {
+                    setMode(0);
+                    sendIndexHttpResponse(client);
+                    break;
+                }
             }
         }
 
@@ -654,7 +678,7 @@ void sendIndexHttpResponse(WiFiEspClient client) {
             "<span style=\"white-space: pre-wrap; font-weight:bold;\">LED:\t1\t2\t3\t4\t5\t6\t7\t8</span><br />");
     client.println("<span style=\"white-space: pre-wrap;\">\t\t100\t50\t30\t0\t0\t0\t0\t0</span><br /><br />");
     client.println(
-            "<span style=\"font-weight:bold;\">Mode: </span><a href=\"/HIGH\">Manual</a> - <a href=\"/H\">Automatic</a> - <a href=\"/LOW\">Off</a><br /><br />");
+            "<span style=\"font-weight:bold;\">Mode: </span><a href=\"/MODE1\">Manual</a> - <a href=\"/H\">Automatic</a> - <a href=\"/MODE0\">Off</a><br /><br />");
     client.println("<a href=\"/edit\">View and edit schedules</a><br /><br />");
     client.println("</body></html>");
 
@@ -993,6 +1017,7 @@ void pushSchedule() {
 }
 
 void alarmMatch() {
+    logDisplay("MATCH rule " + String(nextScheduleID));
     setMode(schedule[nextScheduleID][3]);
     getNextSchedule();
     debugSerial.print("==>");
