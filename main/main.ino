@@ -379,6 +379,7 @@ void updateDisplay(){
             u8g2.clearBuffer();
             clearLogDisplay();
             logDisplay(String(rtc.getHours()) + ":" + String(rtc.getMinutes()));
+            logDisplay(IpAddress2String(WiFi.localIP()));
             u8g2.sendBuffer();
             break;
         case DISPLAY_STATE_ON:
@@ -576,6 +577,14 @@ void printWifiStatus() {
     debugSerial.print("To see this page in action, open a browser to http://");
     debugSerial.println(ip);
     debugSerial.println();
+}
+
+String IpAddress2String(const IPAddress& ipAddress)
+{
+    return String(ipAddress[0]) + String(".") +\
+  String(ipAddress[1]) + String(".") +\
+  String(ipAddress[2]) + String(".") +\
+  String(ipAddress[3])  ;
 }
 
 void webServer() {
