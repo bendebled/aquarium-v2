@@ -172,7 +172,7 @@ const uint8_t off[] = {
 void setup() {
     //Debug
     debugSerial.begin(9600);
-    while (!debugSerial);
+    //while (!debugSerial);
     debugSerial.println("---");
 
     //DEBUG LED
@@ -320,6 +320,8 @@ void buttonsAction(int button){
                 displayState = DISPLAY_STATE_CLOUD;
             if(button == LEFT_PRESSED)
                 displayState = DISPLAY_STATE_INFO;
+            if(button == LEFT_RIGHT_PRESSED)
+                setMode(1);
             break;
         case DISPLAY_STATE_CLOUD:
             if(button == RIGHT_PRESSED)
@@ -334,6 +336,8 @@ void buttonsAction(int button){
                 displayState = DISPLAY_STATE_SETTINGS;
             if(button == LEFT_PRESSED)
                 displayState = DISPLAY_STATE_CLOUD;
+            if(button == LEFT_RIGHT_PRESSED)
+                setMode(0);
             break;
         case DISPLAY_STATE_SETTINGS:
             if(button == RIGHT_PRESSED)
@@ -373,6 +377,8 @@ void updateDisplay(){
     switch (displayState){
         case DISPLAY_STATE_INFO:
             u8g2.clearBuffer();
+            clearLogDisplay();
+            logDisplay(String(rtc.getHours()) + ":" + String(rtc.getMinutes()));
             u8g2.sendBuffer();
             break;
         case DISPLAY_STATE_ON:
@@ -601,6 +607,13 @@ void webServer() {
                     sendScheduleHttpResponse(client);
                     break;
                 }
+//                else if (buf.endsWith("MODE1")) {
+//                    setMode(1);
+//                    break;
+//                } else if (buf.endsWith("MODE0")) {
+//                    setMode(0);
+//                    break;
+//                }
             }
         }
 
@@ -616,14 +629,14 @@ void sendIndexHttpResponse(WiFiEspClient client) {
     client.println();
 
     client.println("<html><head><title>Aquarium</title></head><body>");
-    client.println("<span style=\"font-weight:bold;\">Time: </span>" + String(weekdayEU()) + " " + String(day()) + "/" +
-                   String(month()) + "/" + String(year()) + " " + String(hour()) + ":" + String(minute()) +
+    client.println("<span style=\"font-weight:bold;\">Time: </span>" + String(weekdayEU()) + " " + String(rtc.getDay()) + "/" +
+                   String(rtc.getMonth()) + "/" + String(rtc.getYear()) + " " + String(rtc.getHours()) + ":" + String(rtc.getMinutes()) +
                    "<br /><br />");
     client.println(
             "<span style=\"white-space: pre-wrap; font-weight:bold;\">LED:\t1\t2\t3\t4\t5\t6\t7\t8</span><br />");
     client.println("<span style=\"white-space: pre-wrap;\">\t\t100\t50\t30\t0\t0\t0\t0\t0</span><br /><br />");
     client.println(
-            "<span style=\"font-weight:bold;\">Mode: </span><a href=\"/H\">Manual</a> - <a href=\"/H\">Automatic</a> - <a href=\"/H\">Off</a><br /><br />");
+            "<span style=\"font-weight:bold;\">Mode: </span><a href=\"/HIGH\">Manual</a> - <a href=\"/H\">Automatic</a> - <a href=\"/LOW\">Off</a><br /><br />");
     client.println("<a href=\"/edit\">View and edit schedules</a><br /><br />");
     client.println("</body></html>");
 
@@ -793,9 +806,9 @@ bool getNtpTime() {
         setTime(myTZ.toLocal(epoch, &tcr));
         debugSerial.print("Unix time = ");
         debugSerial.println(epoch);
-        debugSerial.print(hour());
+        debugSerial.print(rtc.getHours());
         debugSerial.print(":");
-        debugSerial.println(minute());
+        debugSerial.println(rtc.getMinutes());
         return true;
     } else {
         return false;
@@ -836,7 +849,7 @@ void getNextSchedule() {
                 unsigned int scheduleHour = schedule[i][1];
                 unsigned int scheduleMinute = schedule[i][2];
                 unsigned int scheduledInLocal = (dayDiff * 24 * 60 + scheduleHour * 60 + scheduleMinute) -
-                                                (hour() * 60 + minute()); //time of schedule - current time
+                                                (rtc.getHours() * 60 + rtc.getMinutes()); //time of schedule - current time
                 if (scheduledInLocal > 10 && scheduledInLocal < scheduledIn) {
                     scheduledIn = scheduledInLocal;
                     nextScheduleID = i;
@@ -1029,10 +1042,14 @@ int manageButtons(){
     return res;
 }
 
+void clearLogDisplay(){
+    displayLine = 1;
+    u8g2.clearBuffer();
+}
+
 void logDisplay(String str){
     if(displayLine > 5){
-        displayLine = 1;
-        u8g2.clearBuffer();
+        clearLogDisplay();
     }
     debugSerial.println(str);
     u8g2.setFont(u8g2_font_6x10_mf);
