@@ -21,7 +21,7 @@ along with The Arduino WiFiEsp library.  If not, see
 
 #include "utility/EspDrv.h"
 #include "utility/debug.h"
-#include <cstdarg>
+
 
 #define NUMESPTAGS 5
 
@@ -46,7 +46,7 @@ typedef enum
 
 Stream *EspDrv::espSerial;
 
-WifiEspRingBuffer EspDrv::ringBuf(32);
+RingBuffer EspDrv::ringBuf(32);
 
 // Array of data to cache the information related to the networks discovered
 char 	EspDrv::_networkSsid[][WL_SSID_MAX_LENGTH] = {{"1"},{"2"},{"3"},{"4"},{"5"}};
@@ -63,6 +63,8 @@ char EspDrv::fwVersion[] = {0};
 long EspDrv::_bufPos=0;
 uint8_t EspDrv::_connId=0;
 
+uint16_t EspDrv::_remotePort  =0;
+uint8_t EspDrv::_remoteIp[] = {0};
 
 
 void EspDrv::wifiDriverInit(Stream *espSerial)
@@ -71,10 +73,22 @@ void EspDrv::wifiDriverInit(Stream *espSerial)
 
 	EspDrv::espSerial = espSerial;
 
-	if (sendCmd(F("AT")) != TAG_OK)
+	bool initOK = false;
+	
+	for(int i=0; i<5; i++)
+	{
+		if (sendCmd(F("AT")) == TAG_OK)
+		{
+			initOK=true;
+			break;
+		}
+		delay(1000);
+	}
+
+	if (!initOK)
 	{
 		LOGERROR(F("Cannot initialize ESP module"));
-		delay(8000);
+		delay(5000);
 		return;
 	}
 
@@ -83,8 +97,8 @@ void EspDrv::wifiDriverInit(Stream *espSerial)
 	// check firmware version
 	getFwVersion();
 
-	// prints a warning message if the firmware is not 1.X
-	if (fwVersion[0] != '1' or
+	// prints a warning message if the firmware is not 1.X or 2.X
+	if ((fwVersion[0] != '1' and fwVersion[0] != '2') or
 		fwVersion[1] != '.')
 	{
 		LOGWARN1(F("Warning: Unsupported firmware"), fwVersion);
@@ -110,12 +124,21 @@ void EspDrv::reset()
 
 	// set station mode
 	sendCmd(F("AT+CWMODE=1"));
+	delay(200);
 
 	// set multiple connections mode
 	sendCmd(F("AT+CIPMUX=1"));
 
+	// Show remote IP and port with "+IPD"
+	sendCmd(F("AT+CIPDINFO=1"));
+	
+	// Disable autoconnect
+	// Automatic connection can create problems during initialization phase at next boot
+	sendCmd(F("AT+CWAUTOCONN=0"));
+
 	// enable DHCP
 	sendCmd(F("AT+CWDHCP=1,1"));
+	delay(200);
 }
 
 
@@ -128,7 +151,7 @@ bool EspDrv::wifiConnect(char* ssid, const char *passphrase)
 	// Escape character syntax is needed if "SSID" or "password" contains
 	// any special characters (',', '"' and '/')
 
-	// connect to access point
+    // connect to access point, use CUR mode to avoid connection at boot
 	int ret = sendCmd(F("AT+CWJAP_CUR=\"%s\",\"%s\""), 20000, ssid, passphrase);
 
 	if (ret==TAG_OK)
@@ -137,7 +160,7 @@ bool EspDrv::wifiConnect(char* ssid, const char *passphrase)
 		return true;
 	}
 
-	LOGWARN1(F("Failed to connected to"), ssid);
+	LOGWARN1(F("Failed connecting to"), ssid);
 
 	// clean additional messages logged after the FAIL tag
 	delay(1000);
@@ -147,24 +170,24 @@ bool EspDrv::wifiConnect(char* ssid, const char *passphrase)
 }
 
 
-bool EspDrv::wifiStartAP(char* ssid, const char* pwd, uint8_t channel, uint8_t enc)
+bool EspDrv::wifiStartAP(char* ssid, const char* pwd, uint8_t channel, uint8_t enc, uint8_t espMode)
 {
 	LOGDEBUG(F("> wifiStartAP"));
 
-	// set AP mode, use CUR mode to avoid starting the AP at reboot
-	if (sendCmd(F("AT+CWMODE_CUR=2"))!=TAG_OK)
+	// set AP mode, use CUR mode to avoid automatic start at boot
+    int ret = sendCmd(F("AT+CWMODE_CUR=%d"), 10000, espMode);
+	if (ret!=TAG_OK)
 	{
 		LOGWARN1(F("Failed to set AP mode"), ssid);
 		return false;
 	}
-
 
 	// TODO
 	// Escape character syntax is needed if "SSID" or "password" contains
 	// any special characters (',', '"' and '/')
 
 	// start access point
-	int ret = sendCmd(F("AT+CWSAP_CUR=\"%s\",\"%s\",%d,%d"), 10000, ssid, pwd, channel, enc);
+	ret = sendCmd(F("AT+CWSAP_CUR=\"%s\",\"%s\",%d,%d"), 10000, ssid, pwd, channel, enc);
 
 	if (ret!=TAG_OK)
 	{
@@ -172,8 +195,10 @@ bool EspDrv::wifiStartAP(char* ssid, const char* pwd, uint8_t channel, uint8_t e
 		return false;
 	}
 	
-	// enable DHCP for AP mode
-	sendCmd(F("AT+CWDHCP_CUR=0,1"));
+	if (espMode==2)
+		sendCmd(F("AT+CWDHCP_CUR=0,1"));    // enable DHCP for AP mode
+	if (espMode==3)
+		sendCmd(F("AT+CWDHCP_CUR=2,1"));    // enable DHCP for station and AP mode
 
 	LOGINFO1(F("Access point started"), ssid);
 	return true;
@@ -194,22 +219,50 @@ int8_t EspDrv::disconnect()
 	return WL_DISCONNECTED;
 }
 
-void EspDrv::config(uint32_t local_ip)
+void EspDrv::config(IPAddress ip)
 {
 	LOGDEBUG(F("> config"));
 
-	// TODO Not tested yet
+	// disable station DHCP
+	sendCmd(F("AT+CWDHCP_CUR=1,0"));
+	
+	// it seems we need to wait here...
+	delay(500);
+	
+	char buf[16];
+	sprintf(buf, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
 
-	// disable DHCP
-	sendCmd(F("AT+CWDHCP_DEF=0,0"));
-
-	int ret = sendCmd(F("AT+CIPSTA_CUR=\"%s\""), 5000, local_ip);
+	int ret = sendCmd(F("AT+CIPSTA_CUR=\"%s\""), 2000, buf);
+	delay(500);
 
 	if (ret==TAG_OK)
 	{
-		LOGINFO1(F("IP address"), local_ip);
+		LOGINFO1(F("IP address set"), buf);
 	}
+}
 
+void EspDrv::configAP(IPAddress ip)
+{
+	LOGDEBUG(F("> config"));
+	
+    sendCmd(F("AT+CWMODE_CUR=2"));
+	
+	// disable station DHCP
+	sendCmd(F("AT+CWDHCP_CUR=2,0"));
+	
+	// it seems we need to wait here...
+	delay(500);
+	
+	char buf[16];
+	sprintf(buf, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+
+	int ret = sendCmd(F("AT+CIPAP_CUR=\"%s\""), 2000, buf);
+	delay(500);
+
+	if (ret==TAG_OK)
+	{
+		LOGINFO1(F("IP address set"), buf);
+	}
 }
 
 uint8_t EspDrv::getConnectionStatus()
@@ -305,7 +358,6 @@ void EspDrv::getIpAddress(IPAddress& ip)
 {
 	LOGDEBUG(F("> getIpAddress"));
 
-	// AT+CIFSR or AT+CIPSTA?
 	char buf[20];
 	if (sendCmdGet(F("AT+CIFSR"), F(":STAIP,\""), F("\""), buf, sizeof(buf)))
 	{
@@ -423,7 +475,6 @@ uint8_t EspDrv::getScanNetworks()
 	while (idx == NUMESPTAGS)
 	{
 		_networkEncr[ssidListNum] = espSerial->parseInt();
-		//LOGDEBUG1("enc:", _networkEncr[ssidListNum]);
 		
 		// discard , and " characters
 		readUntil(1000, "\"");
@@ -431,15 +482,14 @@ uint8_t EspDrv::getScanNetworks()
 		idx = readUntil(1000, "\"", false);
 		if(idx==NUMESPTAGS)
 		{
-			ringBuf.getStr(_networkSsid[ssidListNum], 1);  // 1 = strlen ("\"")
+			memset(_networkSsid[ssidListNum], 0, WL_SSID_MAX_LENGTH );
+			ringBuf.getStrN(_networkSsid[ssidListNum], 1, WL_SSID_MAX_LENGTH-1);
 		}
-		//LOGDEBUG1("ssid:", _networkSsid[ssidListNum]);
 		
 		// discard , character
 		readUntil(1000, ",");
 		
 		_networkRssi[ssidListNum] = espSerial->parseInt();
-		//LOGDEBUG1("rssi:", _networkRssi[ssidListNum]);
 		
 		idx = readUntil(1000, "+CWLAP:(");
 
@@ -455,6 +505,33 @@ uint8_t EspDrv::getScanNetworks()
 	LOGDEBUG1(F("---------------------------------------------- >"), ssidListNum);
 	LOGDEBUG();
     return ssidListNum;
+}
+
+bool EspDrv::getNetmask(IPAddress& mask) {
+	LOGDEBUG(F("> getNetmask"));
+
+	char buf[20];
+	if (sendCmdGet(F("AT+CIPSTA?"), F("+CIPSTA:netmask:\""), F("\""), buf, sizeof(buf)))
+	{
+		mask.fromString (buf);
+		return true;
+	}
+
+	return false;
+}
+
+bool EspDrv::getGateway(IPAddress& gw)
+{
+	LOGDEBUG(F("> getGateway"));
+
+	char buf[20];
+	if (sendCmdGet(F("AT+CIPSTA?"), F("+CIPSTA:gateway:\""), F("\""), buf, sizeof(buf)))
+	{
+		gw.fromString (buf);
+		return true;
+	}
+
+	return false;
 }
 
 char* EspDrv::getSSIDNetoworks(uint8_t networkItem)
@@ -498,24 +575,22 @@ bool EspDrv::ping(const char *host)
 {
 	LOGDEBUG(F("> ping"));
 
-	int ret = sendCmd(F("AT+PING=\"%s\""), 2000, host);
-
-	if (ret==TAG_OK);
-	{
+	int ret = sendCmd(F("AT+PING=\"%s\""), 8000, host);
+	
+	if (ret==TAG_OK)
 		return true;
-	}
 
-    return false;
+	return false;
 }
 
 
 
 // Start server TCP on port specified
-bool EspDrv::startServer(uint16_t port)
+bool EspDrv::startServer(uint16_t port, uint8_t sock)
 {
 	LOGDEBUG1(F("> startServer"), port);
 
-	int ret = sendCmd(F("AT+CIPSERVER=1,%d"), 1000, port);
+	int ret = sendCmd(F("AT+CIPSERVER=%d,%d"), 1000, sock, port);
 
 	return ret==TAG_OK;
 }
@@ -524,12 +599,27 @@ bool EspDrv::startServer(uint16_t port)
 bool EspDrv::startClient(const char* host, uint16_t port, uint8_t sock, uint8_t protMode)
 {
 	LOGDEBUG2(F("> startClient"), host, port);
+	
+	// TCP
+	// AT+CIPSTART=<link ID>,"TCP",<remote IP>,<remote port>
+
+	// UDP
+	// AT+CIPSTART=<link ID>,"UDP",<remote IP>,<remote port>[,<UDP local port>,<UDP mode>]
+
+	// for UDP we set a dummy remote port and UDP mode to 2
+	// this allows to specify the target host/port in CIPSEND
 
 	int ret;
 	if (protMode==TCP_MODE)
-		ret = sendCmd(F("AT+CIPSTART=%d,\"TCP\",\"%s\",%d"), 5000, sock, host, port);
-	else
-		ret = sendCmd(F("AT+CIPSTART=%d,\"UDP\",\"%s\",%d"), 5000, sock, host, port);
+		ret = sendCmd(F("AT+CIPSTART=%d,\"TCP\",\"%s\",%u"), 5000, sock, host, port);
+	else if (protMode==SSL_MODE)
+	{
+		// better to put the CIPSSLSIZE here because it is not supported before firmware 1.4
+		sendCmd(F("AT+CIPSSLSIZE=4096"));
+		ret = sendCmd(F("AT+CIPSTART=%d,\"SSL\",\"%s\",%u"), 5000, sock, host, port);
+	}
+	else if (protMode==UDP_MODE)
+		ret = sendCmd(F("AT+CIPSTART=%d,\"UDP\",\"%s\",0,%u,2"), 5000, sock, host, port);
 
 	return ret==TAG_OK;
 }
@@ -579,11 +669,24 @@ uint16_t EspDrv::availData(uint8_t connId)
 		if (espSerial->find((char *)"+IPD,"))
 		{
 			// format is : +IPD,<id>,<len>:<data>
+			// format is : +IPD,<ID>,<len>[,<remote IP>,<remote port>]:<data>
 
-			_connId = espSerial->parseInt();
-			espSerial->read();  // read the ',' character
-			_bufPos = espSerial->parseInt();
-			espSerial->read();  // read the ':' character
+			_connId = espSerial->parseInt();    // <ID>
+			espSerial->read();                  // ,
+			_bufPos = espSerial->parseInt();    // <len>
+			espSerial->read();                  // "
+			_remoteIp[0] = espSerial->parseInt();    // <remote IP>
+			espSerial->read();                  // .
+			_remoteIp[1] = espSerial->parseInt();
+			espSerial->read();                  // .
+			_remoteIp[2] = espSerial->parseInt();
+			espSerial->read();                  // .
+			_remoteIp[3] = espSerial->parseInt();
+			espSerial->read();                  // "
+			espSerial->read();                  // ,
+			_remotePort = espSerial->parseInt();     // <remote port>
+			
+			espSerial->read();                  // :
 
 			LOGDEBUG();
 			LOGDEBUG2(F("Data packet"), _connId, _bufPos);
@@ -659,42 +762,44 @@ bool EspDrv::getData(uint8_t connId, uint8_t *data, bool peek, bool* connClose)
     _bufPos = 0;
 	_connId = 0;
 	*data = 0;
+	
 	return false;
 }
 
-
-bool EspDrv::getDataBuf(uint8_t sock, uint8_t *_data, uint16_t *_dataLen)
+/**
+ * Receive the data into a buffer.
+ * It reads up to bufSize bytes.
+ * @return	received data size for success else -1.
+ */
+int EspDrv::getDataBuf(uint8_t connId, uint8_t *buf, uint16_t bufSize)
 {
-	for(int i=0; i<_bufPos; i++)
+	if (connId!=_connId)
+		return false;
+
+	if(_bufPos<bufSize)
+		bufSize = _bufPos;
+	
+	for(int i=0; i<bufSize; i++)
 	{
 		int c = timedRead();
-		_data[i] = (char)c;
+		//LOGDEBUG(c);
+		if(c==-1)
+			return -1;
+		
+		buf[i] = (char)c;
+		_bufPos--;
 	}
 
-	*_dataLen = _bufPos;
-	_bufPos = 0;
-
-	return true;
+	return bufSize;
 }
 
-/*
-bool EspDrv::insertDataBuf(uint8_t sock, const uint8_t *data, uint16_t _len)
-{
-    return false;
-}
 
-bool EspDrv::sendUdpData(uint8_t sock)
-{
-    return false;
-}
-*/
-
-bool EspDrv::sendData(uint8_t sock, const uint8_t *data, uint16_t len, bool appendCrLf)
+bool EspDrv::sendData(uint8_t sock, const uint8_t *data, uint16_t len)
 {
 	LOGDEBUG2(F("> sendData:"), sock, len);
 
 	char cmdBuf[20];
-	sprintf_P(cmdBuf, PSTR("AT+CIPSEND=%d,%d"), sock, len);
+	sprintf_P(cmdBuf, PSTR("AT+CIPSEND=%d,%u"), sock, len);
 	espSerial->println(cmdBuf);
 
 	int idx = readUntil(1000, (char *)">", false);
@@ -722,8 +827,8 @@ bool EspDrv::sendData(uint8_t sock, const __FlashStringHelper *data, uint16_t le
 	LOGDEBUG2(F("> sendData:"), sock, len);
 
 	char cmdBuf[20];
-	int len2 = len + 2*appendCrLf;
-	sprintf_P(cmdBuf, PSTR("AT+CIPSEND=%d,%d"), sock, len2);
+	uint16_t len2 = len + 2*appendCrLf;
+	sprintf_P(cmdBuf, PSTR("AT+CIPSEND=%d,%u"), sock, len2);
 	espSerial->println(cmdBuf);
 
 	int idx = readUntil(1000, (char *)">", false);
@@ -754,6 +859,47 @@ bool EspDrv::sendData(uint8_t sock, const __FlashStringHelper *data, uint16_t le
 	}
 
     return true;
+}
+
+bool EspDrv::sendDataUdp(uint8_t sock, const char* host, uint16_t port, const uint8_t *data, uint16_t len)
+{
+	LOGDEBUG2(F("> sendDataUdp:"), sock, len);
+	LOGDEBUG2(F("> sendDataUdp:"), host, port);
+
+	char cmdBuf[40];
+	sprintf_P(cmdBuf, PSTR("AT+CIPSEND=%d,%u,\"%s\",%u"), sock, len, host, port);
+	//LOGDEBUG1(F("> sendDataUdp:"), cmdBuf);
+	espSerial->println(cmdBuf);
+
+	int idx = readUntil(1000, (char *)">", false);
+	if(idx!=NUMESPTAGS)
+	{
+		LOGERROR(F("Data packet send error (1)"));
+		return false;
+	}
+
+	espSerial->write(data, len);
+
+	idx = readUntil(2000);
+	if(idx!=TAG_SENDOK)
+	{
+		LOGERROR(F("Data packet send error (2)"));
+		return false;
+	}
+
+    return true;
+}
+
+
+
+void EspDrv::getRemoteIpAddress(IPAddress& ip)
+{
+	ip = _remoteIp;
+}
+
+uint16_t EspDrv::getRemotePort()
+{
+	return _remotePort;
 }
 
 
@@ -797,18 +943,13 @@ bool EspDrv::sendCmdGet(const __FlashStringHelper* cmd, const char* startTag, co
 		if(idx==NUMESPTAGS)
 		{
 			// end tag found
-			if( ringBuf.getLength() - strlen(endTag) <= outStrLen ) {
-				ringBuf.getStr(outStr, strlen(endTag));
+			// copy result to output buffer avoiding overflow
+			ringBuf.getStrN(outStr, strlen(endTag), outStrLen-1);
 
-				// read the remaining part of the response
-				readUntil(2000);
+			// read the remaining part of the response
+			readUntil(2000);
 
-				ret = true;
-			} else {
-				LOGERROR(F("Buffer overflow in sendCmdGet"));
-			}
-
-			
+			ret = true;
 		}
 		else
 		{
@@ -877,7 +1018,7 @@ int EspDrv::sendCmd(const __FlashStringHelper* cmd, int timeout, ...)
 
 	va_list args;
 	va_start (args, timeout);
-	vsnprintf (cmdBuf, CMD_BUFFER_SIZE, (char*)cmd, args);
+	vsnprintf_P (cmdBuf, CMD_BUFFER_SIZE, (char*)cmd, args);
 	va_end (args);
 
 	espEmptyBuf();

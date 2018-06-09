@@ -58,18 +58,44 @@ size_t WiFiEspClient::println(const __FlashStringHelper *ifsh)
 // Implementation of Client virtual methods
 ////////////////////////////////////////////////////////////////////////////////
 
+int WiFiEspClient::connectSSL(const char* host, uint16_t port)
+{
+	return connect(host, port, SSL_MODE);
+}
+
+int WiFiEspClient::connectSSL(IPAddress ip, uint16_t port)
+{
+	char s[16];
+	sprintf(s, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+	return connect(s, port, SSL_MODE);
+}
+
 int WiFiEspClient::connect(const char* host, uint16_t port)
+{
+    return connect(host, port, TCP_MODE);
+}
+
+int WiFiEspClient::connect(IPAddress ip, uint16_t port)
+{
+	char s[16];
+	sprintf(s, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
+
+	return connect(s, port, TCP_MODE);
+}
+
+/* Private method */
+int WiFiEspClient::connect(const char* host, uint16_t port, uint8_t protMode)
 {
 	LOGINFO1(F("Connecting to"), host);
 
-	_sock = getFirstSocket();
+	_sock = WiFiEspClass::getFreeSocket();
 
     if (_sock != NO_SOCKET_AVAIL)
     {
-    	if (!EspDrv::startClient(host, port, _sock))
+    	if (!EspDrv::startClient(host, port, _sock, protMode))
 			return 0;
 
-    	WiFiEspClass::_state[_sock] = _sock;
+    	WiFiEspClass::allocateSocket(_sock);
     }
 	else
 	{
@@ -77,14 +103,6 @@ int WiFiEspClient::connect(const char* host, uint16_t port)
     	return 0;
     }
     return 1;
-}
-
-int WiFiEspClient::connect(IPAddress ip, uint16_t port)
-{
-	char s[18];
-	sprintf(s, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-
-	return connect(s, port);
 }
 
 
@@ -142,7 +160,7 @@ int WiFiEspClient::read()
 
 	if (connClose)
 	{
-		WiFiEspClass::_state[_sock] = NA_STATE;
+		WiFiEspClass::releaseSocket(_sock);
 		_sock = 255;
 	}
 
@@ -151,11 +169,9 @@ int WiFiEspClient::read()
 
 int WiFiEspClient::read(uint8_t* buf, size_t size)
 {
-	uint16_t _size = size;
-
-	if (!EspDrv::getDataBuf(_sock, buf, &_size))
+	if (!available())
 		return -1;
-	return 0;
+	return EspDrv::getDataBuf(_sock, buf, size);
 }
 
 int WiFiEspClient::peek()
@@ -169,7 +185,7 @@ int WiFiEspClient::peek()
 
 	if (connClose)
 	{
-		WiFiEspClass::_state[_sock] = NA_STATE;
+		WiFiEspClass::releaseSocket(_sock);
 		_sock = 255;
 	}
 
@@ -194,7 +210,7 @@ void WiFiEspClient::stop()
 
 	EspDrv::stopClient(_sock);
 
-	WiFiEspClass::_state[_sock] = NA_STATE;
+	WiFiEspClass::releaseSocket(_sock);
 	_sock = 255;
 }
 
@@ -233,29 +249,22 @@ uint8_t WiFiEspClient::status()
 		return ESTABLISHED;
 	}
 
-	WiFiEspClass::_state[_sock] = NA_STATE;
+	WiFiEspClass::releaseSocket(_sock);
 	_sock = 255;
 
 	return CLOSED;
 }
 
+IPAddress WiFiEspClient::remoteIP()
+{
+	IPAddress ret;
+	EspDrv::getRemoteIpAddress(ret);
+	return ret;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private Methods
 ////////////////////////////////////////////////////////////////////////////////
-
-uint8_t WiFiEspClient::getFirstSocket()
-{
-    for (int i = 0; i < MAX_SOCK_NUM; i++)
-	{
-      if (WiFiEspClass::_state[i] == NA_STATE)
-      {
-          return i;
-      }
-    }
-    return SOCK_NOT_AVAIL;
-}
-
 
 size_t WiFiEspClient::printFSH(const __FlashStringHelper *ifsh, bool appendCrLf)
 {

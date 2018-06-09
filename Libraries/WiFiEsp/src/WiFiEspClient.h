@@ -53,6 +53,18 @@ public:
   virtual int connect(const char *host, uint16_t port);
 
   /*
+  * Connect to the specified IP address and port using SSL. The return value indicates success or failure.
+  * Returns true if the connection succeeds, false if not.
+  */
+  int connectSSL(IPAddress ip, uint16_t port);
+  
+  /*
+  * Connect to the specified host and port using SSL. The return value indicates success or failure.
+  * Returns true if the connection succeeds, false if not.
+  */
+  int connectSSL(const char* host, uint16_t port);
+  
+  /*
   * Write a character to the server the client is connected to.
   * Returns the number of characters written.
   */
@@ -111,13 +123,19 @@ public:
   using Print::println;
 
 
+  /*
+  * Returns the remote IP address.
+  */
+  IPAddress remoteIP();
+  
+
   friend class WiFiEspServer;
 
 private:
 
   uint8_t _sock;     // connection id
 
-  uint8_t getFirstSocket();
+  int connect(const char* host, uint16_t port, uint8_t protMode);
   
   size_t printFSH(const __FlashStringHelper *ifsh, bool appendCrLf);
 

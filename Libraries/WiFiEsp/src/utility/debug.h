@@ -28,20 +28,20 @@ along with The Arduino WiFiEsp library.  If not, see
 // 3: INFO: errors, warnings and informational (default)
 // 4: DEBUG: errors, warnings, informational and debug
 
-#define _ESPLOGLEVEL_ 1
+#define _ESPLOGLEVEL_ 3
 
 
-#define LOGERROR(x)    if(_ESPLOGLEVEL_>0) { SerialUSB.print("[WiFiEsp] "); SerialUSB.println(x); }
-#define LOGERROR1(x,y) if(_ESPLOGLEVEL_>2) { SerialUSB.print("[WiFiEsp] "); SerialUSB.print(x); SerialUSB.print(" "); SerialUSB.println(y); }
-#define LOGWARN(x)     if(_ESPLOGLEVEL_>1) { SerialUSB.print("[WiFiEsp] "); SerialUSB.println(x); }
-#define LOGWARN1(x,y)  if(_ESPLOGLEVEL_>2) { SerialUSB.print("[WiFiEsp] "); SerialUSB.print(x); SerialUSB.print(" "); SerialUSB.println(y); }
-#define LOGINFO(x)     if(_ESPLOGLEVEL_>2) { SerialUSB.print("[WiFiEsp] "); SerialUSB.println(x); }
-#define LOGINFO1(x,y)  if(_ESPLOGLEVEL_>2) { SerialUSB.print("[WiFiEsp] "); SerialUSB.print(x); SerialUSB.print(" "); SerialUSB.println(y); }
+#define LOGERROR(x)    if(_ESPLOGLEVEL_>0) { Serial.print("[WiFiEsp] "); Serial.println(x); }
+#define LOGERROR1(x,y) if(_ESPLOGLEVEL_>2) { Serial.print("[WiFiEsp] "); Serial.print(x); Serial.print(" "); Serial.println(y); }
+#define LOGWARN(x)     if(_ESPLOGLEVEL_>1) { Serial.print("[WiFiEsp] "); Serial.println(x); }
+#define LOGWARN1(x,y)  if(_ESPLOGLEVEL_>2) { Serial.print("[WiFiEsp] "); Serial.print(x); Serial.print(" "); Serial.println(y); }
+#define LOGINFO(x)     if(_ESPLOGLEVEL_>2) { Serial.print("[WiFiEsp] "); Serial.println(x); }
+#define LOGINFO1(x,y)  if(_ESPLOGLEVEL_>2) { Serial.print("[WiFiEsp] "); Serial.print(x); Serial.print(" "); Serial.println(y); }
 
-#define LOGDEBUG(x)      if(_ESPLOGLEVEL_>3) { SerialUSB.println(x); }
-#define LOGDEBUG0(x)     if(_ESPLOGLEVEL_>3) { SerialUSB.print(x); }
-#define LOGDEBUG1(x,y)   if(_ESPLOGLEVEL_>3) { SerialUSB.print(x); SerialUSB.print(" "); SerialUSB.println(y); }
-#define LOGDEBUG2(x,y,z) if(_ESPLOGLEVEL_>3) { SerialUSB.print(x); SerialUSB.print(" "); SerialUSB.print(y); SerialUSB.print(" "); SerialUSB.println(z); }
+#define LOGDEBUG(x)      if(_ESPLOGLEVEL_>3) { Serial.println(x); }
+#define LOGDEBUG0(x)     if(_ESPLOGLEVEL_>3) { Serial.print(x); }
+#define LOGDEBUG1(x,y)   if(_ESPLOGLEVEL_>3) { Serial.print(x); Serial.print(" "); Serial.println(y); }
+#define LOGDEBUG2(x,y,z) if(_ESPLOGLEVEL_>3) { Serial.print(x); Serial.print(" "); Serial.print(y); Serial.print(" "); Serial.println(z); }
 
 
 #endif

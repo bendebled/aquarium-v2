@@ -19,7 +19,7 @@
 SoftwareSerial Serial1(6, 7); // RX, TX
 #endif
 
-char ssid[] = "TwimEsp";            // your network SSID (name)
+char ssid[] = "TwimEsp";         // your network SSID (name)
 char pass[] = "12345678";        // your network password
 int status = WL_IDLE_STATUS;     // the Wifi radio's status
 int reqCount = 0;                // number of requests received
@@ -43,9 +43,13 @@ void setup()
 
   Serial.print("Attempting to start AP ");
   Serial.println(ssid);
+
+  // uncomment these two lines if you want to set the IP address of the AP
+  //IPAddress localIp(192, 168, 111, 111);
+  //WiFi.configAP(localIp);
   
   // start access point
-  status = WiFi.beginAP(ssid, pass, 10, 3);
+  status = WiFi.beginAP(ssid, 10, pass, ENC_TYPE_WPA2_PSK);
 
   Serial.println("Access point started");
   printWifiStatus();

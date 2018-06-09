@@ -16,11 +16,11 @@ along with The Arduino WiFiEsp library.  If not, see
 <http://www.gnu.org/licenses/>.
 --------------------------------------------------------------------*/
 
-#include "WifiEspRingBuffer.h"
+#include "RingBuffer.h"
 
 #include <Arduino.h>
 
-WifiEspRingBuffer::WifiEspRingBuffer(unsigned int size)
+RingBuffer::RingBuffer(unsigned int size)
 {
 	_size = size;
 	// add one char to terminate the string
@@ -29,20 +29,20 @@ WifiEspRingBuffer::WifiEspRingBuffer(unsigned int size)
 	init();
 }
 
-WifiEspRingBuffer::~WifiEspRingBuffer() {}
+RingBuffer::~RingBuffer() {}
 
-void WifiEspRingBuffer::reset()
+void RingBuffer::reset()
 {
 	ringBufP = ringBuf;
 }
 
-void WifiEspRingBuffer::init()
+void RingBuffer::init()
 {
 	ringBufP = ringBuf;
 	memset(ringBuf, 0, _size+1);
 }
 
-void WifiEspRingBuffer::push(char c)
+void RingBuffer::push(char c)
 {
 	*ringBufP = c;
 	ringBufP++;
@@ -52,7 +52,7 @@ void WifiEspRingBuffer::push(char c)
 
 
 
-bool WifiEspRingBuffer::endsWith(const char* str)
+bool RingBuffer::endsWith(const char* str)
 {
 	int findStrLen = strlen(str);
 
@@ -77,20 +77,29 @@ bool WifiEspRingBuffer::endsWith(const char* str)
 	return true;
 }
 
-unsigned int WifiEspRingBuffer::getLength() {
-	return ringBufP - ringBuf;
+
+
+void RingBuffer::getStr(char * destination, unsigned int skipChars)
+{
+	int len = ringBufP-ringBuf-skipChars;
+
+	// copy buffer to destination string
+	strncpy(destination, ringBuf, len);
+
+	// terminate output string
+	//destination[len]=0;
 }
 
-void WifiEspRingBuffer::getStr(char * destination, unsigned int skipChars)
+void RingBuffer::getStrN(char * destination, unsigned int skipChars, unsigned int num)
 {
-  int len = ringBufP-ringBuf-skipChars;
+	int len = ringBufP-ringBuf-skipChars;
 
-  // copy buffer to destination string
-  strncpy(destination, ringBuf, len);
+	if (len>num)
+		len=num;
 
-  // terminate output string
-  destination[len]=0;
+	// copy buffer to destination string
+	strncpy(destination, ringBuf, len);
 
-  //Serial.print("xxxxxxxxxxxxxxxxxxx");
-  //Serial.println(destination);
+	// terminate output string
+	//destination[len]=0;
 }

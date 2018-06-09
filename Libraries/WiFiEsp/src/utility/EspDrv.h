@@ -23,7 +23,7 @@ along with The Arduino WiFiEsp library.  If not, see
 #include "IPAddress.h"
 
 
-#include "WifiEspRingBuffer.h"
+#include "RingBuffer.h"
 
 
 
@@ -48,7 +48,7 @@ along with The Arduino WiFiEsp library.  If not, see
 // Default state value for Wifi state field
 #define NA_STATE -1
 
-#define WL_FW_VER_LENGTH 16
+#define WL_FW_VER_LENGTH 6
 
 #define NO_SOCKET_AVAIL 255
 
@@ -57,7 +57,7 @@ along with The Arduino WiFiEsp library.  If not, see
 #define CMD_BUFFER_SIZE 200
 
 
-typedef enum eProtMode {TCP_MODE, UDP_MODE} tProtMode;
+typedef enum eProtMode {TCP_MODE, UDP_MODE, SSL_MODE} tProtMode;
 
 
 typedef enum {
@@ -134,13 +134,18 @@ public:
     /*
 	* Start the Access Point
 	*/
-	static bool wifiStartAP(char* ssid, const char* pwd, uint8_t channel, uint8_t enc);
+	static bool wifiStartAP(char* ssid, const char* pwd, uint8_t channel, uint8_t enc, uint8_t espMode);
 
 
     /*
-	 *Set ip configuration disabling dhcp client
-	*/
-    static void config(uint32_t local_ip);
+	 * Set ip configuration disabling dhcp client
+	 */
+    static void config(IPAddress local_ip);
+
+    /*
+	 * Set ip configuration disabling dhcp client
+	 */
+    static void configAP(IPAddress local_ip);
 
 
     /*
@@ -173,6 +178,21 @@ public:
 
 	static void getIpAddressAP(IPAddress& ip);
 
+    /*
+     * Get the interface IP netmask.
+     * This can be used to retrieve settings configured through DHCP.
+     *
+     * return: true if successful
+     */
+    static bool getNetmask(IPAddress& mask);
+
+    /*
+     * Get the interface IP gateway.
+     * This can be used to retrieve settings configured through DHCP.
+     *
+     * return: true if successful
+     */
+    static bool getGateway(IPAddress& mask);
 
     /*
      * Return the current SSID associated with the network
@@ -230,8 +250,8 @@ public:
      * return: encryption type (enum wl_enc_type) of the specified item on the networks scanned list
      */
     static uint8_t getEncTypeNetowrks(uint8_t networkItem);
-	
-	
+
+
     /*
      * Get the firmware version
      */
@@ -242,41 +262,25 @@ public:
 	// Client/Server methods
 	////////////////////////////////////////////////////////////////////////////
 
-    /*
-	* Start a TCP server on the specified port
-	*/
-	static bool startServer(uint16_t port);
 
-    static bool startClient(const char* host, uint16_t port, uint8_t sock, uint8_t protMode=TCP_MODE);
-
+    static bool startServer(uint16_t port, uint8_t sock);
+    static bool startClient(const char* host, uint16_t port, uint8_t sock, uint8_t protMode);
     static void stopClient(uint8_t sock);
-
     static uint8_t getServerState(uint8_t sock);
-
     static uint8_t getClientState(uint8_t sock);
-
     static bool getData(uint8_t connId, uint8_t *data, bool peek, bool* connClose);
-
-    static bool getDataBuf(uint8_t sock, uint8_t *data, uint16_t *len);
-
-    static bool sendData(uint8_t sock, const uint8_t *data, uint16_t len, bool appendCrLf=false);
-
+    static int getDataBuf(uint8_t connId, uint8_t *buf, uint16_t bufSize);
+    static bool sendData(uint8_t sock, const uint8_t *data, uint16_t len);
     static bool sendData(uint8_t sock, const __FlashStringHelper *data, uint16_t len, bool appendCrLf=false);
-
+	static bool sendDataUdp(uint8_t sock, const char* host, uint16_t port, const uint8_t *data, uint16_t len);
     static uint16_t availData(uint8_t connId);
 
 
-	////////////////////////////////////////////////////////////////////////////
-	// Non standard methods
-	////////////////////////////////////////////////////////////////////////////
-
-	/*
-	* Ping a host.
-	*/
 	static bool ping(const char *host);
-
-
     static void reset();
+
+    static void getRemoteIpAddress(IPAddress& ip);
+    static uint16_t getRemotePort();
 
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -287,6 +291,10 @@ private:
 	static long _bufPos;
 	static uint8_t _connId;
 
+	static uint16_t _remotePort;
+	static uint8_t  _remoteIp[WL_IPV4_LENGTH];
+
+
 	// firmware version string
 	static char 	fwVersion[WL_FW_VER_LENGTH];
 
@@ -294,7 +302,7 @@ private:
 	static char 	_networkSsid[WL_NETWORKS_LIST_MAXNUM][WL_SSID_MAX_LENGTH];
 	static int32_t 	_networkRssi[WL_NETWORKS_LIST_MAXNUM];
 	static uint8_t 	_networkEncr[WL_NETWORKS_LIST_MAXNUM];
-	
+
 
 	// settings of current selected network
 	static char 	_ssid[WL_SSID_MAX_LENGTH];
@@ -304,7 +312,7 @@ private:
 
 
 	// the ring buffer is used to search the tags in the stream
-	static WifiEspRingBuffer ringBuf;
+	static RingBuffer ringBuf;
 
 
 	//static int sendCmd(const char* cmd, int timeout=1000);
@@ -324,6 +332,7 @@ private:
 	friend class WiFiEsp;
 	friend class WiFiEspServer;
 	friend class WiFiEspClient;
+	friend class WiFiEspUdp;
 };
 
 extern EspDrv espDrv;

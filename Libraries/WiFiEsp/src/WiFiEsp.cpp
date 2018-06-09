@@ -55,22 +55,40 @@ int WiFiEspClass::begin(char* ssid, const char *passphrase)
 }
 
 
-int WiFiEspClass::beginAP(char* ssid, const char* pwd, char channel, uint8_t enc)
+int WiFiEspClass::beginAP(char* ssid, uint8_t channel, const char* pwd, uint8_t enc, bool apOnly)
 {
-	espMode = 2;
-    if (EspDrv::wifiStartAP(ssid, pwd, channel, enc))
+	if(apOnly)
+        espMode = 2;
+    else
+        espMode = 3;
+    
+    if (EspDrv::wifiStartAP(ssid, pwd, channel, enc, espMode))
 		return WL_CONNECTED;
 
 	return WL_CONNECT_FAILED;
 }
 
-
-
-void WiFiEspClass::config(IPAddress local_ip)
+int WiFiEspClass::beginAP(char* ssid)
 {
-	LOGERROR(F("Not implemented"));
-	//EspDrv::config(1, (uint32_t)local_ip, 0, 0);
+	return beginAP(ssid, 10, "", 0);
 }
+
+int WiFiEspClass::beginAP(char* ssid, uint8_t channel)
+{
+	return beginAP(ssid, channel, "", 0);
+}
+
+
+void WiFiEspClass::config(IPAddress ip)
+{
+	EspDrv::config(ip);
+}
+
+void WiFiEspClass::configAP(IPAddress ip)
+{
+	EspDrv::configAP(ip);
+}
+
 
 
 int WiFiEspClass::disconnect()
@@ -96,6 +114,21 @@ IPAddress WiFiEspClass::localIP()
 	return ret;
 }
 
+IPAddress WiFiEspClass::subnetMask()
+{
+	IPAddress mask;
+	if(espMode==1)
+    EspDrv::getNetmask(mask);
+	return mask;
+}
+
+IPAddress WiFiEspClass::gatewayIP()
+{
+	IPAddress gw;
+	if(espMode==1)
+		EspDrv::getGateway(gw);
+	return gw;
+}
 
 
 char* WiFiEspClass::SSID()
@@ -171,6 +204,29 @@ delay(ESP8266_HARD_RESET_DURACTION);
 bool WiFiEspClass::ping(const char *host)
 {
 	return EspDrv::ping(host);
+}
+
+uint8_t WiFiEspClass::getFreeSocket()
+{
+  // ESP Module assigns socket numbers in ascending order, so we will assign them in descending order
+    for (int i = MAX_SOCK_NUM - 1; i >= 0; i--)
+	{
+      if (_state[i] == NA_STATE)
+      {
+          return i;
+      }
+    }
+    return SOCK_NOT_AVAIL;
+}
+
+void WiFiEspClass::allocateSocket(uint8_t sock)
+{
+  _state[sock] = sock;
+}
+
+void WiFiEspClass::releaseSocket(uint8_t sock)
+{
+  _state[sock] = NA_STATE;
 }
 
 

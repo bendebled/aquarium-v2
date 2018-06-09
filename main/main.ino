@@ -1,36 +1,10 @@
-// This is the firmware for the aquarium
-//
-// Upload this firmware with the "Arduino/Genuino Zero (Native USB Port)
-// This firmware is designed to run on the ATMEL SAMD21E18
-// 
-// USED CHIP 1: ATMEL 24C32 (EEPROM)
-// 5V operations
-// Datasheet: http://ww1.microchip.com/downloads/en/DeviceDoc/21061H.pdf
-//                            Brekaout Board:
-//       ___                      SDA - 
-//  A0 -|   |- VCC                SCL -   ___
-//  A1 -|   |- NC                  NC -  |___|
-//  A2 -|   |- SCL                VCC -   
-// GND -|___|- SDA                GND - 
-//
-//
-// USED CHIP 2: ESP8266
-// Pull UP the following pin with 10K resistors: REST, CH_PD, GPIO0
-// Pull DOWN the following pin with 10K resistors: GPIO15
-// Set a 100nF cap between VCC and GND
-// Connect ESP8266's TXD to PA11
-// Connect ESP8266's RXD to PA10
-// Ref: https://github.com/esp8266/Arduino/blob/master/doc/boards.rst#minimal-hardware-setup-for-bootloading-and-usage
-//      http://esp8266.github.io/Arduino/versions/2.0.0-rc2/doc/boards.html#minimal-hardware-setup-for-bootloading-and-usage
-
 #include "WiFiEsp.h"
 #include "WiFiEspUdp.h"
 #include <Wire.h>
 #include <Timezone.h>    //https://github.com/JChristensen/Timezone
 #include <TimeLib.h>
-#include <RTCZero.h>
 #include <U8g2lib.h>
-//#include <OneWire.h>
+#include <OneWire.h>
 #include <DallasTemperature.h>
 
 //Debug
@@ -41,15 +15,15 @@
 char ssid[] = "bbox2-8356";
 char pass[] = "EYLNAHST";
 int status = WL_IDLE_STATUS;
-//Server
-WiFiEspServer server(80);
-WifiEspRingBuffer buf(8);
-//NTP
-unsigned int localPort = 2390;      // local port to listen for UDP packets
-IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server
-const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
-byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
-WiFiEspUDP Udp;
+    //Server
+    WiFiEspServer server(80);
+    WifiEspRingBuffer buf(8);
+    //NTP
+    unsigned int localPort = 2390;      // local port to listen for UDP packets
+    IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server
+    const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
+    byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
+    WiFiEspUDP Udp;
 
 //NTP
 unsigned int lastNtpTry = 0;
@@ -72,7 +46,6 @@ byte nextScheduleID = 127;
 unsigned long nextScheduleEpoch = 0;
 
 //RTC
-RTCZero rtc;
 
 //LED
 #define NUMBER_OF_LED 8
@@ -199,13 +172,36 @@ const uint8_t off[] = {
 void setup() {
     //Debug
     debugSerial.begin(9600);
-    //while (!debugSerial);
+    while (!debugSerial);
     debugSerial.println("---");
 
     //DEBUG LED
     pinMode(DEBUG_LED, OUTPUT);
+    //while(1){
     digitalWrite(DEBUG_LED, LOW);
+    delay(500);
+    digitalWrite(DEBUG_LED, HIGH);
+    delay(500);
+    //}
 
+    //Wifi
+    espSerial.begin(115200);
+    WiFi.init(&espSerial);
+    if (WiFi.status() == WL_NO_SHIELD) {
+        debugSerial.println("WiFi shield not present");
+        logDisplay("[X] WiFi not present");
+    }
+    while (status != WL_CONNECTED) {
+        debugSerial.print("Attempting to connect to WPA SSID: ");
+        //logDisplay("WiFi Attempt");
+        debugSerial.println(ssid);
+        status = WiFi.begin(ssid, pass);
+    }
+    debugSerial.println("You're connected to the network");
+    //logDisplay("[V] WiFi: " + IpAddress2String(WiFi.localIP()));
+    printWifiStatus();
+
+    
     //SCREEN
     u8g2.begin();
 
@@ -220,13 +216,11 @@ void setup() {
 
     //BUTTONS
     pinMode(BUTTON_LEFT, INPUT_PULLDOWN);
-    debugSerial.println("to interr");
-    debugSerial.println(digitalPinToInterrupt(BUTTON_LEFT));
-    debugSerial.println(digitalPinToInterrupt(BUTTON_RIGHT));
     attachInterrupt(digitalPinToInterrupt(BUTTON_LEFT), buttonLeft, RISING);
 
     pinMode(BUTTON_RIGHT, INPUT_PULLDOWN);
     attachInterrupt(digitalPinToInterrupt(BUTTON_RIGHT), buttonRight, RISING);
+
 
     //Wifi
     espSerial.begin(115200);
@@ -269,8 +263,7 @@ void setup() {
     logDisplay("[OK] NTP");
 
     //RTC
-    rtc.begin();
-    rtc.setEpoch(now());
+
 
     //SCHEDULE
     //Clear the schedule array
@@ -291,45 +284,11 @@ void setup() {
     debugSerial.println(printScheduleTable());
 
     debugSerial.print("current epoch : ");
-    debugSerial.println(rtc.getEpoch());
 
     debugSerial.print("NEXT SCHEDULE ID: ");
     debugSerial.print(nextScheduleID);
     debugSerial.print(" - ");
     debugSerial.println(nextScheduleEpoch);
-
-    rtc.setAlarmEpoch(nextScheduleEpoch);
-    rtc.enableAlarm(rtc.MATCH_YYMMDDHHMMSS);
-    rtc.attachInterrupt(alarmMatch);
-    //rtc.standbyMode();
-
-    debugSerial.print("current time : ");
-    debugSerial.print(rtc.getDay());
-    debugSerial.print("-");
-    debugSerial.print(rtc.getMonth());
-    debugSerial.print("-");
-    debugSerial.print(rtc.getYear());
-    debugSerial.print(" ");
-    debugSerial.print(rtc.getHours());
-    debugSerial.print(":");
-    debugSerial.print(rtc.getMinutes());
-    debugSerial.print(":");
-    debugSerial.println(rtc.getSeconds());
-
-    debugSerial.print("alarm time : ");
-    debugSerial.print(rtc.getAlarmDay());
-    debugSerial.print("-");
-    debugSerial.print(rtc.getAlarmMonth());
-    debugSerial.print("-");
-    debugSerial.print(rtc.getAlarmYear());
-    debugSerial.print(" ");
-    debugSerial.print(rtc.getAlarmHours());
-    debugSerial.print(":");
-    debugSerial.print(rtc.getAlarmMinutes());
-    debugSerial.print(":");
-    debugSerial.println(rtc.getAlarmSeconds());
-
-    updateDisplayState(DISPLAY_STATE_INFO);
 }
 
 void loop() {
@@ -425,7 +384,6 @@ void keepTimeInSync(){
         ntpTry = 1;
         logDisplay("[OK] NTP");
 
-        rtc.setEpoch(now());
         lastNtpSync = millis();
     }
 }
@@ -436,7 +394,6 @@ void updateDisplay(){
             case DISPLAY_STATE_INFO:
                 u8g2.clearBuffer();
                 clearLogDisplay();
-                logDisplay(String(rtc.getHours()) + ":" + String(rtc.getMinutes()));
                 logDisplay(IpAddress2String(WiFi.localIP()));
                 u8g2.sendBuffer();
                 break;
@@ -700,9 +657,7 @@ void sendIndexHttpResponse(WiFiEspClient client) {
     client.println();
 
     client.println("<html><head><title>Aquarium</title></head><body>");
-    client.println("<span style=\"font-weight:bold;\">Time: </span>" + String(weekdayEU()) + " " + String(rtc.getDay()) + "/" +
-                   String(rtc.getMonth()) + "/" + String(rtc.getYear()) + " " + String(rtc.getHours()) + ":" + String(rtc.getMinutes()) +
-                   "<br /><br />");
+
     client.println(
             "<span style=\"white-space: pre-wrap; font-weight:bold;\">LED:\t1\t2\t3\t4\t5\t6\t7\t8</span><br />");
     client.println("<span style=\"white-space: pre-wrap;\">\t\t100\t50\t30\t0\t0\t0\t0\t0</span><br /><br />");
@@ -877,9 +832,7 @@ bool getNtpTime() {
         setTime(myTZ.toLocal(epoch, &tcr));
         debugSerial.print("Unix time = ");
         debugSerial.println(epoch);
-        debugSerial.print(rtc.getHours());
         debugSerial.print(":");
-        debugSerial.println(rtc.getMinutes());
         return true;
     } else {
         return false;
@@ -919,8 +872,7 @@ void getNextSchedule() {
             if (isScheduleActiveToday(schedule[i][0], checkDay)) {
                 unsigned int scheduleHour = schedule[i][1];
                 unsigned int scheduleMinute = schedule[i][2];
-                unsigned int scheduledInLocal = (dayDiff * 24 * 60 + scheduleHour * 60 + scheduleMinute) -
-                                                (rtc.getHours() * 60 + rtc.getMinutes()); //time of schedule - current time
+                unsigned int scheduledInLocal = 0; //time of schedule - current time
                 if (scheduledInLocal > 10 && scheduledInLocal < scheduledIn) {
                     scheduledIn = scheduledInLocal;
                     nextScheduleID = i;
@@ -1052,9 +1004,7 @@ void alarmMatch() {
     debugSerial.print("==>");
     debugSerial.println(nextScheduleID);
 
-    rtc.setAlarmEpoch(nextScheduleEpoch);
-    rtc.enableAlarm(rtc.MATCH_YYMMDDHHMMSS);
-    rtc.attachInterrupt(alarmMatch);
+
 
     debugSerial.println("ALARM MATCH");
 }
@@ -1080,12 +1030,10 @@ void setMode(byte m) {
 }
 
 void buttonLeft(){
-  debugSerial.println("LEFTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT");
     lastLeftPressed = millis();
 }
 
 void buttonRight(){
-  debugSerial.println("RIGHTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT");
     lastRightPressed = millis();
 }
 
@@ -1097,7 +1045,6 @@ int manageButtons(){
             res = LEFT_RIGHT_PRESSED;
         }
         else{
-          debugSerial.println("left pressedd");
             res = LEFT_PRESSED;
         }
         delay(100);
@@ -1108,7 +1055,6 @@ int manageButtons(){
             res = LEFT_RIGHT_PRESSED;
         }
         else{
-          debugSerial.println("right pressed");
             res = RIGHT_PRESSED;
         }
         delay(100);

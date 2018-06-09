@@ -25,15 +25,19 @@ along with The Arduino WiFiEsp library.  If not, see
 /* Constructor */
 WiFiEspUDP::WiFiEspUDP() : _sock(NO_SOCKET_AVAIL) {}
 
+
+
+
 /* Start WiFiUDP socket, listening at local port PORT */
 
 uint8_t WiFiEspUDP::begin(uint16_t port)
 {
-    uint8_t sock = getFirstSocket();
+    uint8_t sock = WiFiEspClass::getFreeSocket();
     if (sock != NO_SOCKET_AVAIL)
     {
-        //EspDrv::startClient(host, port, _sock)
-		//ServerDrv::startServer(port, sock, UDP_MODE);
+        EspDrv::startClient("0", port, sock, UDP_MODE);
+		
+        WiFiEspClass::allocateSocket(sock);  // allocating the socket for the listener
         WiFiEspClass::_server_port[sock] = port;
         _sock = sock;
         _port = port;
@@ -46,7 +50,8 @@ uint8_t WiFiEspUDP::begin(uint16_t port)
 
 /* return number of bytes available in the current packet,
    will return zero if parsePacket hasn't been called yet */
-int WiFiEspUDP::available() {
+int WiFiEspUDP::available()
+{
 	 if (_sock != NO_SOCKET_AVAIL)
 	 {
 		int bytes = EspDrv::availData(_sock);
@@ -65,7 +70,13 @@ void WiFiEspUDP::stop()
 	  if (_sock == NO_SOCKET_AVAIL)
 	    return;
 
-	  //ServerDrv::stopClient(_sock);
+      // Discard data that might be in the incoming buffer
+      flush();
+      
+      // Stop the listener and return the socket to the pool
+	  EspDrv::stopClient(_sock);
+      WiFiEspClass::_state[_sock] = NA_STATE;
+      WiFiEspClass::_server_port[_sock] = 0;
 
 	  _sock = NO_SOCKET_AVAIL;
 }
@@ -73,11 +84,13 @@ void WiFiEspUDP::stop()
 int WiFiEspUDP::beginPacket(const char *host, uint16_t port)
 {
   if (_sock == NO_SOCKET_AVAIL)
-	  _sock = getFirstSocket();
+	  _sock = WiFiEspClass::getFreeSocket();
   if (_sock != NO_SOCKET_AVAIL)
   {
-	  EspDrv::startClient(host, port, _sock, UDP_MODE);
-	  WiFiEspClass::_state[_sock] = _sock;
+	  //EspDrv::startClient(host, port, _sock, UDP_MODE);
+	  _remotePort = port;
+	  strcpy(_remoteHost, host);
+	  WiFiEspClass::allocateSocket(_sock);
 	  return 1;
   }
   return 0;
@@ -105,7 +118,7 @@ size_t WiFiEspUDP::write(uint8_t byte)
 
 size_t WiFiEspUDP::write(const uint8_t *buffer, size_t size)
 {
-	bool r = EspDrv::sendData(_sock, buffer, size);
+	bool r = EspDrv::sendDataUdp(_sock, _remoteHost, _remotePort, buffer, size);
 	if (!r)
 	{
 		return 0;
@@ -126,26 +139,19 @@ int WiFiEspUDP::read()
 		return -1;
 
 	bool connClose = false;
-	EspDrv::getData(_sock, &b, false, &connClose);
+	
+    // Read the data and handle the timeout condition
+	if (! EspDrv::getData(_sock, &b, false, &connClose))
+      return -1;  // Timeout occured
 
 	return b;
 }
 
-int WiFiEspUDP::read(unsigned char* buffer, size_t len)
+int WiFiEspUDP::read(uint8_t* buf, size_t size)
 {
-	int bytes = available();
-
-	if(bytes==-1)
+	if (!available())
 		return -1;
-
-	if (bytes!=len)
-		LOGWARN1(bytes, len);
-
-
-	uint16_t size = 0;
-	if (!EspDrv::getDataBuf(_sock, buffer, &size))
-		return -1;
-	return size;
+	return EspDrv::getDataBuf(_sock, buf, size);
 }
 
 int WiFiEspUDP::peek()
@@ -154,51 +160,34 @@ int WiFiEspUDP::peek()
   if (!available())
     return -1;
 
-  //ServerDrv::getData(_sock, &b, 1);
   return b;
 }
 
 void WiFiEspUDP::flush()
 {
-  // TODO: a real check to ensure transmission has been completed
+	  // Discard all input data
+	  int count = available();
+	  while (count-- > 0)
+	    read();
 }
+
 
 IPAddress  WiFiEspUDP::remoteIP()
 {
-	uint8_t _remoteIp[4] = {0};
-	uint8_t _remotePort[2] = {0};
-
-	//WiFiDrv::getRemoteData(_sock, _remoteIp, _remotePort);
-	IPAddress ip(_remoteIp);
-	return ip;
+	IPAddress ret;
+	EspDrv::getRemoteIpAddress(ret);
+	return ret;
 }
 
 uint16_t  WiFiEspUDP::remotePort()
 {
-	uint8_t _remoteIp[4] = {0};
-	uint8_t _remotePort[2] = {0};
-
-	// 	WiFiDrv::getRemoteData(_sock, _remoteIp, _remotePort);
-	uint16_t port = (_remotePort[0]<<8)+_remotePort[1];
-	return port;
+	return EspDrv::getRemotePort();
 }
+
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // Private Methods
 ////////////////////////////////////////////////////////////////////////////////
 
-// TODO remove duplication with WiFiEspClient::getFirstSocket()
-
-uint8_t WiFiEspUDP::getFirstSocket()
-{
-    for (int i = 0; i < MAX_SOCK_NUM; i++)
-	{
-      if (WiFiEspClass::_state[i] == NA_STATE)
-      {
-          return i;
-      }
-    }
-    return SOCK_NOT_AVAIL;
-}
 
