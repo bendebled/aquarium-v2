@@ -1,3 +1,28 @@
+// This is the firmware for the aquarium
+//
+// Upload this firmware with the "Arduino/Genuino Zero (Native USB Port)
+// This firmware is designed to run on the ATMEL SAMD21E18
+// 
+// USED CHIP 1: ATMEL 24C32 (EEPROM)
+// 5V operations
+// Datasheet: http://ww1.microchip.com/downloads/en/DeviceDoc/21061H.pdf
+//                            Brekaout Board:
+//       ___                      SDA - 
+//  A0 -|   |- VCC                SCL -   ___
+//  A1 -|   |- NC                  NC -  |___|
+//  A2 -|   |- SCL                VCC -   
+// GND -|___|- SDA                GND - 
+//
+//
+// USED CHIP 2: ESP8266
+// Pull UP the following pin with 10K resistors: REST, CH_PD, GPIO0
+// Pull DOWN the following pin with 10K resistors: GPIO15
+// Set a 100nF cap between VCC and GND
+// Connect ESP8266's TXD to PA11
+// Connect ESP8266's RXD to PA10
+// Ref: https://github.com/esp8266/Arduino/blob/master/doc/boards.rst#minimal-hardware-setup-for-bootloading-and-usage
+//      http://esp8266.github.io/Arduino/versions/2.0.0-rc2/doc/boards.html#minimal-hardware-setup-for-bootloading-and-usage
+
 #include "WiFiEsp.h"
 #include "WiFiEspUdp.h"
 #include <Wire.h>
@@ -5,7 +30,7 @@
 #include <TimeLib.h>
 #include <RTCZero.h>
 #include <U8g2lib.h>
-#include <OneWire.h>
+//#include <OneWire.h>
 #include <DallasTemperature.h>
 
 //Debug
@@ -16,15 +41,15 @@
 char ssid[] = "bbox2-8356";
 char pass[] = "EYLNAHST";
 int status = WL_IDLE_STATUS;
-    //Server
-    WiFiEspServer server(80);
-    WifiEspRingBuffer buf(8);
-    //NTP
-    unsigned int localPort = 2390;      // local port to listen for UDP packets
-    IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server
-    const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
-    byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
-    WiFiEspUDP Udp;
+//Server
+WiFiEspServer server(80);
+WifiEspRingBuffer buf(8);
+//NTP
+unsigned int localPort = 2390;      // local port to listen for UDP packets
+IPAddress timeServer(129, 6, 15, 28); // time.nist.gov NTP server
+const int NTP_PACKET_SIZE = 48; // NTP time stamp is in the first 48 bytes of the message
+byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming and outgoing packets
+WiFiEspUDP Udp;
 
 //NTP
 unsigned int lastNtpTry = 0;
@@ -195,11 +220,13 @@ void setup() {
 
     //BUTTONS
     pinMode(BUTTON_LEFT, INPUT_PULLDOWN);
+    debugSerial.println("to interr");
+    debugSerial.println(digitalPinToInterrupt(BUTTON_LEFT));
+    debugSerial.println(digitalPinToInterrupt(BUTTON_RIGHT));
     attachInterrupt(digitalPinToInterrupt(BUTTON_LEFT), buttonLeft, RISING);
 
     pinMode(BUTTON_RIGHT, INPUT_PULLDOWN);
     attachInterrupt(digitalPinToInterrupt(BUTTON_RIGHT), buttonRight, RISING);
-
 
     //Wifi
     espSerial.begin(115200);
@@ -301,6 +328,8 @@ void setup() {
     debugSerial.print(rtc.getAlarmMinutes());
     debugSerial.print(":");
     debugSerial.println(rtc.getAlarmSeconds());
+
+    updateDisplayState(DISPLAY_STATE_INFO);
 }
 
 void loop() {
@@ -1051,10 +1080,12 @@ void setMode(byte m) {
 }
 
 void buttonLeft(){
+  debugSerial.println("LEFTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT");
     lastLeftPressed = millis();
 }
 
 void buttonRight(){
+  debugSerial.println("RIGHTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT");
     lastRightPressed = millis();
 }
 
@@ -1066,6 +1097,7 @@ int manageButtons(){
             res = LEFT_RIGHT_PRESSED;
         }
         else{
+          debugSerial.println("left pressedd");
             res = LEFT_PRESSED;
         }
         delay(100);
@@ -1076,6 +1108,7 @@ int manageButtons(){
             res = LEFT_RIGHT_PRESSED;
         }
         else{
+          debugSerial.println("right pressed");
             res = RIGHT_PRESSED;
         }
         delay(100);
